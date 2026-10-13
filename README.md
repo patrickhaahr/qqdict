@@ -14,6 +14,18 @@ Choose **Apple Silicon** (`arm64`) for an M-series Mac or **Intel** (`x64`) for 
 
 > Early preview: the current build is ad hoc signed and is not Apple notarized. Read [installation and first launch](docs/install.md) before opening it. The transcription connection uses an internal Codex protocol; it may change or stop working and is not a supported public subscription API. qqdict is an independent project, unaffiliated with OpenAI.
 
+<p>
+  <a href="assets/screenshots/settings.png"><img src="assets/screenshots/settings.png" width="368" alt="qqdict Settings, with shortcut, microphone, journal, and dictation controls"></a>
+  <a href="assets/screenshots/popover.png"><img src="assets/screenshots/popover.png" width="314" alt="qqdict menu bar popover showing recent example transcripts with copy buttons"></a>
+</p>
+
+<p>
+  <a href="assets/screenshots/island-recording.png"><img src="assets/screenshots/island-recording.png" width="312" alt="Floating dictation island while recording, with a waveform and timer"></a>
+  <a href="assets/screenshots/island-saved.png"><img src="assets/screenshots/island-saved.png" width="312" alt="Floating dictation island after a transcript is saved, with its quick-copy button"></a>
+</p>
+
+Interface previews with example transcripts. Click any image to view it at full resolution.
+
 ## Install
 
 1. Download the `.dmg` for your Mac from [Releases](https://github.com/qwertyu-alex/qqdict/releases).
@@ -22,6 +34,12 @@ Choose **Apple Silicon** (`arm64`) for an M-series Mac or **Intel** (`x64`) for 
 4. Click a text field, hold **fn / Globe**, speak, and release to paste.
 
 qqdict lives in the menu bar. Its window can be closed while dictation stays available. If macOS blocks the preview, follow Apple’s explicit **Open Anyway** flow in [the installation guide](docs/install.md).
+
+<details>
+  <summary>See the Setup tab</summary>
+
+  <p><a href="assets/screenshots/setup.png"><img src="assets/screenshots/setup.png" width="460" alt="qqdict Setup tab, with progress and access steps for Codex, Microphone, Accessibility, and Input Monitoring"></a></p>
+</details>
 
 ## Small by design
 
