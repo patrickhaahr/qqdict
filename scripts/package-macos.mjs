@@ -27,8 +27,13 @@ if (requestedNotarization && !developerSigned) {
 }
 
 if (process.platform !== 'darwin') throw new Error('macOS packaging must run on macOS.');
+try {
+  await access(electronBundle);
+} catch {
+  throw new Error('Electron runtime is missing. Run npm ci with lifecycle scripts enabled, or run node node_modules/electron/install.js, before packaging.');
+}
 await Promise.all([
-  access(electronBundle), access(nativeBridge), access(appIcon), access(rendererIcon), access(entitlements),
+  access(nativeBridge), access(appIcon), access(rendererIcon), access(entitlements),
   access(join(project, 'dist/main.js')), access(join(project, 'dist/preload.js')),
   access(join(project, 'dist/renderer/index.html')),
   access(join(project, 'dist/renderer/popover.html')), access(join(project, 'dist/renderer/overlay.html')),

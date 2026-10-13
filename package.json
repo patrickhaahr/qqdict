@@ -1,6 +1,6 @@
 {
   "name": "qqdict",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "private": true,
   "description": "Minimal push-to-talk dictation for macOS using your existing Codex sign-in.",
   "productName": "qqdict",
@@ -13,7 +13,8 @@
     "start": "npm run build:native && npm run build && electron .",
     "probe": "npm run build && node dist/probe.js",
     "test": "node --import tsx --test src/*.test.ts && node --test scripts/*.test.mjs",
-    "dist:mac": "npm run package:mac && node scripts/create-dmg.mjs"
+    "dist:mac": "npm run package:mac && node scripts/create-dmg.mjs",
+    "postinstall": "node node_modules/electron/install.js"
   },
   "dependencies": {
     "ws": "8.22.0"
