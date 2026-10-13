@@ -125,7 +125,29 @@ jobs:
           set -euo pipefail
           TASK_RELEASE_FLAGS=()
           if [[ "$TASK_PRERELEASE" == 'true' ]]; then TASK_RELEASE_FLAGS+=(--prerelease); fi
-          if gh release view "$TASK_RELEASE_TAG" >/dev/null 2>&1; then
+          if TASK_EXISTING_PRERELEASE="$(gh release view "$TASK_RELEASE_TAG" --json isPrerelease --jq '.isPrerelease' 2>/dev/null)"; then
+            # A locally notarized release can share its tag with an unsigned CI
+            # build. Never replace that release or its installers with a preview.
+            if [[ "$TASK_PRERELEASE" == 'true' && "$TASK_EXISTING_PRERELEASE" == 'false' ]]; then
+              echo "::notice::Skipping preview publication: $TASK_RELEASE_TAG already has a stable release. Its release details and installers are preserved."
+              exit 0
+            fi
+            TASK_INCOMING_DEVELOPER_ID="$(node -e 'const fs = require("node:fs"); console.log(["arm64", "x64"].every(arch => JSON.parse(fs.readFileSync(`release/release-metadata-${arch}.json`, "utf8")).signing === "developer-id"))')"
+            if [[ "$TASK_INCOMING_DEVELOPER_ID" != 'true' ]]; then
+              # Signed local previews also retain their signature if unsigned CI
+              # finishes after the draft has been published as a prerelease.
+              TASK_EXISTING_METADATA="$(mktemp -d)"
+              trap 'rm -rf "$TASK_EXISTING_METADATA"' EXIT
+              if ! gh release download "$TASK_RELEASE_TAG" --pattern 'release-metadata-*.json' --dir "$TASK_EXISTING_METADATA"; then
+                echo "::error::Unable to inspect existing release signing metadata; refusing to replace its installers with an unsigned build."
+                exit 1
+              fi
+              TASK_EXISTING_DEVELOPER_ID="$(node -e 'const fs = require("node:fs"); const path = require("node:path"); console.log(["arm64", "x64"].every(arch => JSON.parse(fs.readFileSync(path.join(process.argv[1], `release-metadata-${arch}.json`), "utf8")).signing === "developer-id"))' "$TASK_EXISTING_METADATA")"
+              if [[ "$TASK_EXISTING_DEVELOPER_ID" == 'true' ]]; then
+                echo "::notice::Skipping unsigned publication: $TASK_RELEASE_TAG already has Developer ID signed installers for both architectures. Its release details and installers are preserved."
+                exit 0
+              fi
+            fi
             gh release edit "$TASK_RELEASE_TAG" --title "qqdict $TASK_RELEASE_TAG" --notes-file release-notes.md --prerelease="$TASK_PRERELEASE"
             gh release upload "$TASK_RELEASE_TAG" release/*.dmg release/*.zip release/SHA256SUMS-*.txt release/release-metadata-*.json --clobber
           else

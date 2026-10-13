@@ -6,13 +6,15 @@ Hold a key. Say it. Keep writing.
 
 qqdict is a small macOS menu bar app that turns your voice into text and pastes it into the field you’re using. It uses your existing Codex sign-in.
 
-**[Download qqdict for Mac →](https://github.com/qwertyu-alex/qqdict/releases/tag/v0.5.4)**
+**[Download qqdict for Mac →](https://github.com/qwertyu-alex/qqdict/releases/tag/v0.5.5)**
 
-[Apple Silicon](https://github.com/qwertyu-alex/qqdict/releases/download/v0.5.4/qqdict-0.5.4-mac-arm64.dmg) · [Intel](https://github.com/qwertyu-alex/qqdict/releases/download/v0.5.4/qqdict-0.5.4-mac-x64.dmg) · [All releases](https://github.com/qwertyu-alex/qqdict/releases)
+[Apple Silicon](https://github.com/qwertyu-alex/qqdict/releases/download/v0.5.5/qqdict-0.5.5-mac-arm64.dmg) · [Intel](https://github.com/qwertyu-alex/qqdict/releases/download/v0.5.5/qqdict-0.5.5-mac-x64.dmg) · [All releases](https://github.com/qwertyu-alex/qqdict/releases)
 
 Choose **Apple Silicon** (`arm64`) for an M-series Mac or **Intel** (`x64`) for an Intel Mac. Requires **macOS 13 or later**, a microphone, internet access, and a compatible Codex installation signed in with ChatGPT.
 
-> Early preview: the current build is ad hoc signed and is not Apple notarized. Read [installation and first launch](docs/install.md) before opening it. The transcription connection uses an internal Codex protocol; it may change or stop working and is not a supported public subscription API. qqdict is an independent project, unaffiliated with OpenAI.
+**Signed preview:** v0.5.5 is signed with Developer ID. Apple notarization is still processing, so these downloads are not yet notarized and macOS may block the first launch. See [installation and first launch](docs/install.md).
+
+> The transcription connection uses an internal Codex protocol; it may change or stop working and is not a supported public subscription API. qqdict is an independent project, unaffiliated with OpenAI.
 
 <p>
   <a href="assets/screenshots/settings.png"><img src="assets/screenshots/settings.png" width="368" alt="qqdict Settings, with shortcut, microphone, journal, and dictation controls"></a>
@@ -30,10 +32,10 @@ Interface previews with example transcripts. Click any image to view it at full 
 
 1. Download the `.dmg` for your Mac from [Releases](https://github.com/qwertyu-alex/qqdict/releases).
 2. Open it and drag **qqdict** into **Applications**.
-3. Open qqdict and complete the **Setup** tab: Codex sign-in, Microphone, Accessibility, and Input Monitoring.
+3. Open qqdict. If macOS blocks it, go to **System Settings → Privacy & Security → Open Anyway**, then confirm. Complete the **Setup** tab: Codex sign-in, Microphone, Accessibility, and Input Monitoring.
 4. Click a text field, hold **fn / Globe**, speak, and release to paste.
 
-qqdict lives in the menu bar. Its window can be closed while dictation stays available. If macOS blocks the preview, follow Apple’s explicit **Open Anyway** flow in [the installation guide](docs/install.md).
+qqdict lives in the menu bar. Its window can be closed while dictation stays available.
 
 <details>
   <summary>See the Setup tab</summary>

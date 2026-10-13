@@ -8,20 +8,20 @@ Open **Apple menu → About This Mac**:
 
 | Your Mac | Release asset |
 | --- | --- |
-| Apple M-series chip | [qqdict-0.5.4-mac-arm64.dmg](https://github.com/qwertyu-alex/qqdict/releases/download/v0.5.4/qqdict-0.5.4-mac-arm64.dmg) |
-| Intel processor | [qqdict-0.5.4-mac-x64.dmg](https://github.com/qwertyu-alex/qqdict/releases/download/v0.5.4/qqdict-0.5.4-mac-x64.dmg) |
+| Apple M-series chip | [qqdict-0.5.5-mac-arm64.dmg](https://github.com/qwertyu-alex/qqdict/releases/download/v0.5.5/qqdict-0.5.5-mac-arm64.dmg) |
+| Intel processor | [qqdict-0.5.5-mac-x64.dmg](https://github.com/qwertyu-alex/qqdict/releases/download/v0.5.5/qqdict-0.5.5-mac-x64.dmg) |
 
 [Browse releases](https://github.com/qwertyu-alex/qqdict/releases). The corresponding ZIP is an alternative to the DMG. Releases include SHA-256 checksums for checking downloaded files.
 
 Open the DMG, drag **qqdict** to **Applications**, then eject the disk image. Open the installed copy from Applications before granting permissions.
 
-## First launch of an unnotarized preview
+## First launch
 
-Preview builds are ad hoc signed. That verifies the app’s local code structure, but it does not establish an Apple Developer identity or notarization. macOS may block the first launch of a downloaded preview.
+Version 0.5.5 is a **Developer ID–signed preview**. Apple notarization is still processing; these downloads are not yet notarized, so macOS may block the first launch.
 
-If you trust the source of the download, attempt to open qqdict once, then go to **System Settings → Privacy & Security**. Find the message about qqdict and choose **Open Anyway**, then confirm the macOS prompt. The option appears only after a blocked launch. Use this per-app approval rather than disabling Gatekeeper or removing quarantine metadata.
+Open **qqdict** from Applications once. If macOS blocks it and you trust the download, go to **System Settings → Privacy & Security**, find the message about qqdict, and choose **Open Anyway**. Confirm the prompt, then complete Setup. This per-app option appears after a blocked launch. You do not need to disable Gatekeeper or remove quarantine metadata.
 
-If macOS reports malware, a damaged app, or no available approval, stop and check that you downloaded the expected release. Do not bypass that message. See [Apple’s guide to opening a blocked app](https://support.apple.com/102445).
+If macOS reports a damaged app or malware, download the current release again from this repository and check the release’s checksum; do not bypass that message. See [Apple’s explanation of macOS app security](https://support.apple.com/102445).
 
 ## Complete Setup
 
@@ -44,6 +44,10 @@ If fn also opens the emoji picker or macOS dictation, open **System Settings →
 
 If you used the earlier **Codex Dictation** app, qqdict imports its recent history and preferences automatically on first launch. Turn off **Open at login** in the old app and quit it so both apps do not run together. Your existing `~/Dictation/` journal stays in place.
 
-Quit qqdict before replacing the app in Applications. Ad hoc builds can require macOS permission approval again after an update. Settings and recent history remain in qqdict’s Application Support folder; the monthly journal remains in `~/Dictation/`.
+Quit qqdict before replacing the app in Applications. If you are upgrading from an older ad hoc preview, macOS may ask you to grant permissions again for the signed app. Settings and recent history remain in qqdict’s Application Support folder; the monthly journal remains in `~/Dictation/`.
 
 To uninstall, turn off **Open at login** in qqdict Settings, quit the app, and move `qqdict.app` from Applications to the Trash. Your journal is left in place.
+
+## Older unsigned previews
+
+Releases through 0.5.4 are ad hoc signed and unnotarized. Version 0.5.5 adds a Developer ID signature; notarization remains pending. Older previews may also need the per-app **Open Anyway** approval described above. See [Apple’s instructions](https://support.apple.com/102445).
