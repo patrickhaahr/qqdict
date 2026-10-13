@@ -10,7 +10,7 @@
   </head>
   <body>
     <main class="app">
-      <header class="titlebar"><h1>qqdict</h1><button id="refresh-button" class="icon-button" type="button" aria-label="Refresh connection and permissions" title="Refresh"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5M6.1 7a7 7 0 0 1 11.5-2L20 8M4 16l2.4 3A7 7 0 0 0 17.9 17"/></svg></button></header>
+      <header class="titlebar"><h1>qqdict</h1></header>
       <nav class="tabs" role="tablist" aria-label="qqdict">
         <button class="tab" id="setup-tab" role="tab" aria-controls="setup-panel" aria-selected="false" tabindex="-1">Setup</button>
         <button class="tab" id="settings-tab" role="tab" aria-controls="settings-panel" aria-selected="true">Settings</button>
@@ -20,7 +20,7 @@
         <div id="error-panel" class="notice" role="alert" hidden><span id="error-message"></span><button id="dismiss-error" class="icon-button" type="button" aria-label="Dismiss message"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M6 18 18 6"/></svg></button></div>
         <section class="tab-panel setup-panel" id="setup-panel" role="tabpanel" aria-labelledby="setup-tab" hidden>
           <div class="setup-heading"><h2 id="setup-title">Set up qqdict</h2><p id="setup-description">Connect your Codex account and allow access on this Mac.</p></div>
-          <div class="setup-progress"><span id="setup-count" role="status" aria-live="polite">Checking access…</span><progress id="setup-progress" value="0" max="4" aria-label="Setup progress"></progress></div>
+          <div class="setup-progress"><div class="setup-progress-meta"><span id="setup-count" role="status" aria-live="polite">Checking access…</span><button id="refresh-button" class="setup-check" type="button" aria-label="Check connection and permissions again">Check again</button></div><progress id="setup-progress" value="0" max="4" aria-label="Setup progress"></progress></div>
           <div class="setup-steps">
             <div class="setup-step" id="account-step"><span class="step-mark" aria-hidden="true">1</span><div class="step-copy"><h3>Codex account</h3><p id="connection-label">Sign in to Codex, then reconnect.</p></div><span id="connection-state" class="step-state" hidden>Connected</span><button id="reconnect-button" class="setup-action" type="button">Reconnect</button></div>
             <div class="setup-step" id="microphone-step"><span class="step-mark" aria-hidden="true">2</span><div class="step-copy"><h3>Microphone</h3><p id="microphone-setup-detail">Captures your voice.</p></div><span id="microphone-state" class="step-state" hidden>Allowed</span><button data-permission="microphone" id="microphone-permission" class="setup-action" type="button">Allow</button></div>

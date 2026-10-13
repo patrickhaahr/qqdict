@@ -12,11 +12,11 @@ npm test
 npm run dist:mac
 ```
 
-The installer builder produces versioned DMG and ZIP files in `release/`, plus a SHA-256 manifest for that architecture. For version 0.5.2:
+The installer builder produces versioned DMG and ZIP files in `release/`, plus a SHA-256 manifest for that architecture. For version 0.5.3:
 
 ```text
-qqdict-0.5.2-mac-arm64.dmg
-qqdict-0.5.2-mac-arm64.zip
+qqdict-0.5.3-mac-arm64.dmg
+qqdict-0.5.3-mac-arm64.zip
 SHA256SUMS-arm64.txt
 ```
 
@@ -26,9 +26,9 @@ Without configured Apple credentials, these are **ad hoc signed, unnotarized pre
 
 ## GitHub release workflow
 
-The workflow runs tests and builds on macOS runners for both architectures when a `v*` tag is pushed. Keep `package.json`, the lockfile, and the tag version consistent. For the initial release, use `v0.5.2`.
+The workflow runs tests and builds on macOS runners for both architectures when a `v*` tag is pushed. Keep `package.json`, the lockfile, and the tag version consistent. Use a `v` prefix with the package version, for example `v0.5.3`.
 
-The workflow publishes versioned assets to the GitHub release, including a `release-metadata-{arch}.json` file that records signing status. Check both jobs and inspect the downloadable assets before announcing the release. Unnotarized previews are prereleases. The README links directly to `v0.5.2`; update its versioned links for each release. GitHub’s `/releases/latest` link skips prereleases and is suitable once a stable notarized release is available.
+The workflow publishes versioned assets to the GitHub release, including a `release-metadata-{arch}.json` file that records signing status. Check both jobs and inspect the downloadable assets before announcing the release. Unnotarized previews are prereleases. The README links directly to `v0.5.3`; update its versioned links for each release. GitHub’s `/releases/latest` link skips prereleases and is suitable once a stable notarized release is available.
 
 ## Developer ID signing and notarization
 

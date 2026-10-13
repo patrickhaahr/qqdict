@@ -546,11 +546,13 @@ function runSettings(): void {
     const button = element<HTMLButtonElement>('refresh-button');
     button.disabled = true;
     button.setAttribute('aria-busy', 'true');
+    button.textContent = 'Checking…';
     if (state) renderSetup(state);
     action(api.refresh().then(render).finally(() => {
       refreshing = false;
       button.disabled = false;
       button.setAttribute('aria-busy', 'false');
+      button.textContent = 'Check again';
       if (state) renderSetup(state);
     }));
   };
