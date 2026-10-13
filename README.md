@@ -6,9 +6,9 @@ Hold a key. Say it. Keep writing.
 
 qqdict is a small macOS menu bar app that turns your voice into text and pastes it into the field you’re using. It uses your existing Codex sign-in.
 
-**[Download qqdict for Mac →](https://github.com/qwertyu-alex/qqdict/releases/tag/v0.5.2)**
+**[Download qqdict for Mac →](https://github.com/qwertyu-alex/qqdict/releases/tag/v0.5.3)**
 
-[Apple Silicon](https://github.com/qwertyu-alex/qqdict/releases/download/v0.5.2/qqdict-0.5.2-mac-arm64.dmg) · [Intel](https://github.com/qwertyu-alex/qqdict/releases/download/v0.5.2/qqdict-0.5.2-mac-x64.dmg) · [All releases](https://github.com/qwertyu-alex/qqdict/releases)
+[Apple Silicon](https://github.com/qwertyu-alex/qqdict/releases/download/v0.5.3/qqdict-0.5.3-mac-arm64.dmg) · [Intel](https://github.com/qwertyu-alex/qqdict/releases/download/v0.5.3/qqdict-0.5.3-mac-x64.dmg) · [All releases](https://github.com/qwertyu-alex/qqdict/releases)
 
 Choose **Apple Silicon** (`arm64`) for an M-series Mac or **Intel** (`x64`) for an Intel Mac. Requires **macOS 13 or later**, a microphone, internet access, and a compatible Codex installation signed in with ChatGPT.
 
