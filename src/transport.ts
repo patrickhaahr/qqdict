@@ -14,6 +14,7 @@ export type DictationEvent = {
 export const DICTATION_URL = 'wss://chatgpt.com/backend-api/dictation/stream?dictation_surface=global';
 const SAMPLE_RATE = 24_000;
 const MAX_AUDIO_BYTES = SAMPLE_RATE * 2 * 300;
+const ENDPOINT_SILENCE_BYTES = SAMPLE_RATE * 2;
 
 export function safeMessage(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
@@ -165,6 +166,13 @@ export class DictationTransport {
   stop(): Promise<string> {
     if (this.finishPromise) return this.finishPromise;
     if (!this.started || this.socket?.readyState !== WebSocket.OPEN) return Promise.reject(new Error('No active dictation session.'));
+    // Give server VAD an audio endpoint even when the key is released directly
+    // after the final word. This records no extra microphone audio and adds no
+    // wait; append() preserves the same exact five-minute byte limit.
+    if (this.audioBytes > 0) {
+      const silenceBytes = Math.min(ENDPOINT_SILENCE_BYTES, MAX_AUDIO_BYTES - this.audioBytes);
+      if (silenceBytes > 0) this.append(Buffer.alloc(silenceBytes));
+    }
     this.stopping = true;
     this.emit({ type: 'status', status: 'transcribing' });
     this.finishPromise = new Promise<string>((resolve, reject) => {

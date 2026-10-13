@@ -146,7 +146,12 @@ try {
 
   // Sign from the inside out. Do not use --deep to sign, which can replace the
   // native helper's stable identity. --deep is used only for verification.
-  for (const path of await walk(contents)) {
+  // Intel Electron ships an unsigned crashpad handler. Sign nested binaries
+  // before framework executables, since codesign treats those executables as
+  // their enclosing framework and validates its nested code immediately.
+  const signingPaths = (await walk(contents)).sort((left, right) =>
+    right.split('/').length - left.split('/').length || left.localeCompare(right));
+  for (const path of signingPaths) {
     if (!await isMachO(path)) continue;
     const identifier = path.endsWith('/DictationBridge') ? `${bundleId}.bridge` : undefined;
     const isElectronExecutable = path.includes('/Contents/MacOS/') && !path.endsWith('/DictationBridge');

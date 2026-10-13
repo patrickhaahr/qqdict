@@ -1,6 +1,6 @@
 {
   "name": "qqdict",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "private": true,
   "description": "Minimal push-to-talk dictation for macOS using your existing Codex sign-in.",
   "productName": "qqdict",
