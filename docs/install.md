@@ -8,8 +8,8 @@ Open **Apple menu → About This Mac**:
 
 | Your Mac | Release asset |
 | --- | --- |
-| Apple M-series chip | [qqdict-0.5.3-mac-arm64.dmg](https://github.com/qwertyu-alex/qqdict/releases/download/v0.5.3/qqdict-0.5.3-mac-arm64.dmg) |
-| Intel processor | [qqdict-0.5.3-mac-x64.dmg](https://github.com/qwertyu-alex/qqdict/releases/download/v0.5.3/qqdict-0.5.3-mac-x64.dmg) |
+| Apple M-series chip | [qqdict-0.5.4-mac-arm64.dmg](https://github.com/qwertyu-alex/qqdict/releases/download/v0.5.4/qqdict-0.5.4-mac-arm64.dmg) |
+| Intel processor | [qqdict-0.5.4-mac-x64.dmg](https://github.com/qwertyu-alex/qqdict/releases/download/v0.5.4/qqdict-0.5.4-mac-x64.dmg) |
 
 [Browse releases](https://github.com/qwertyu-alex/qqdict/releases). The corresponding ZIP is an alternative to the DMG. Releases include SHA-256 checksums for checking downloaded files.
 
