@@ -17,9 +17,9 @@ Open the DMG, drag **qqdict** to **Applications**, then eject the disk image. Op
 
 ## First launch
 
-Version 0.5.5 is a **Developer ID–signed preview**. Apple notarization is still processing; these downloads are not yet notarized, so macOS may block the first launch.
+The current version 0.5.5 downloads are **signed with Developer ID and notarized by Apple**.
 
-Open **qqdict** from Applications once. If macOS blocks it and you trust the download, go to **System Settings → Privacy & Security**, find the message about qqdict, and choose **Open Anyway**. Confirm the prompt, then complete Setup. This per-app option appears after a blocked launch. You do not need to disable Gatekeeper or remove quarantine metadata.
+Open **qqdict** from Applications. If macOS asks whether to open an app downloaded from the internet, choose **Open**, then complete Setup. You will grant microphone and privacy permissions during Setup.
 
 If macOS reports a damaged app or malware, download the current release again from this repository and check the release’s checksum; do not bypass that message. See [Apple’s explanation of macOS app security](https://support.apple.com/102445).
 
@@ -48,6 +48,6 @@ Quit qqdict before replacing the app in Applications. If you are upgrading from 
 
 To uninstall, turn off **Open at login** in qqdict Settings, quit the app, and move `qqdict.app` from Applications to the Trash. Your journal is left in place.
 
-## Older unsigned previews
+## Older unnotarized previews
 
-Releases through 0.5.4 are ad hoc signed and unnotarized. Version 0.5.5 adds a Developer ID signature; notarization remains pending. Older previews may also need the per-app **Open Anyway** approval described above. See [Apple’s instructions](https://support.apple.com/102445).
+Releases through 0.5.4 and the initial 0.5.5 preview were unnotarized. Download the current 0.5.5 assets above for the notarized build. If you specifically need an older preview and trust its source, attempt to open it once, then use the per-app **Open Anyway** option in **System Settings → Privacy & Security**. That option appears after a blocked launch; see [Apple’s instructions](https://support.apple.com/102445).

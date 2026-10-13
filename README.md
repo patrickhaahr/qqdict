@@ -12,7 +12,7 @@ qqdict is a small macOS menu bar app that turns your voice into text and pastes 
 
 Choose **Apple Silicon** (`arm64`) for an M-series Mac or **Intel** (`x64`) for an Intel Mac. Requires **macOS 13 or later**, a microphone, internet access, and a compatible Codex installation signed in with ChatGPT.
 
-**Signed preview:** v0.5.5 is signed with Developer ID. Apple notarization is still processing, so these downloads are not yet notarized and macOS may block the first launch. See [installation and first launch](docs/install.md).
+Both Mac downloads are signed with Developer ID and notarized by Apple. See [installation and first launch](docs/install.md).
 
 > The transcription connection uses an internal Codex protocol; it may change or stop working and is not a supported public subscription API. qqdict is an independent project, unaffiliated with OpenAI.
 
@@ -32,10 +32,10 @@ Interface previews with example transcripts. Click any image to view it at full 
 
 1. Download the `.dmg` for your Mac from [Releases](https://github.com/qwertyu-alex/qqdict/releases).
 2. Open it and drag **qqdict** into **Applications**.
-3. Open qqdict. If macOS blocks it, go to **System Settings → Privacy & Security → Open Anyway**, then confirm. Complete the **Setup** tab: Codex sign-in, Microphone, Accessibility, and Input Monitoring.
+3. Open qqdict from **Applications** and complete the **Setup** tab: Codex sign-in, Microphone, Accessibility, and Input Monitoring.
 4. Click a text field, hold **fn / Globe**, speak, and release to paste.
 
-qqdict lives in the menu bar. Its window can be closed while dictation stays available.
+macOS may ask you to confirm opening an app downloaded from the internet on first launch. qqdict lives in the menu bar; its window can be closed while dictation stays available.
 
 <details>
   <summary>See the Setup tab</summary>
