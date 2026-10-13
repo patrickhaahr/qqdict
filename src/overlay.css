@@ -1,0 +1,22 @@
+:root{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:transparent;color:#ececec;font-synthesis:none;-webkit-font-smoothing:antialiased}
+*{box-sizing:border-box}
+body{margin:0;display:flex;justify-content:center;align-items:center;width:100vw;height:100vh;padding:16px;overflow:hidden;user-select:none}
+.pill{display:flex;align-items:center;gap:10px;width:280px;height:44px;padding:0 8px 0 14px;border:1px solid #3b3b3b;border-radius:24px;background:#252525;box-shadow:0 6px 16px #0003;animation:appear 180ms ease-out;cursor:grab;touch-action:none}
+.pill[data-dragging="true"]{cursor:grabbing}
+.wave{display:flex;align-items:center;gap:2.5px;width:22px;height:18px;flex-shrink:0;color:#d3d3d3}
+.wave span{display:block;width:2.5px;height:4px;background:currentColor;border-radius:3px;transition:height 65ms linear;will-change:height}
+.status{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:12px;font-weight:500;line-height:1.2}
+.timer{flex-shrink:0;color:#a7a7a7;font-size:10px;font-variant-numeric:tabular-nums}
+.copy{display:grid;place-items:center;position:relative;flex-shrink:0;width:28px;height:28px;margin:0;padding:0;border:0;border-radius:50%;background:transparent;color:#d0d0d0;font:inherit;cursor:pointer;touch-action:manipulation;transition:background .15s,color .15s}
+.copy:hover:not(:disabled){background:#3b3b3b;color:#fff}
+.copy:focus-visible{outline:2px solid #ddd;outline-offset:3px}
+.copy:disabled{opacity:.25;cursor:default}
+.copy svg{display:block;width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+.copy .check-icon{display:none}
+.copy[data-copied="true"] .copy-icon{display:none}
+.copy[data-copied="true"] .check-icon{display:block}
+.starting .wave,.transcribing .wave{animation:thinking 1s ease-in-out infinite}
+.starting .timer,.transcribing .timer,.error .timer{visibility:hidden}
+@keyframes appear{from{transform:translateY(6px);opacity:0}to{transform:translateY(0);opacity:1}}
+@keyframes thinking{0%,100%{opacity:.4}50%{opacity:1}}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}

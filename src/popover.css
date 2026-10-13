@@ -1,0 +1,47 @@
+:root {
+  color-scheme: dark;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: #ececec;
+  background: transparent;
+  font-synthesis: none;
+  -webkit-font-smoothing: antialiased;
+}
+* { box-sizing: border-box; }
+body { margin: 0; padding: 10px; height: 100vh; }
+[hidden] { display: none !important; }
+button { font: inherit; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+button:focus-visible { outline: 2px solid #ececec; outline-offset: 2px; }
+svg { display: block; width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.popover { display: flex; flex-direction: column; height: 100%; background: #212121; border: 1px solid #353535; border-radius: 13px; box-shadow: 0 7px 22px #0003; overflow: hidden; }
+.header { min-height: 65px; display: flex; align-items: center; padding: 0 19px; flex-shrink: 0; }
+h1 { margin: 0; font-size: 15px; font-weight: 600; letter-spacing: -.25px; }
+.state { display: flex; align-items: center; gap: 6px; color: #9f9f9f; font-size: 11px; margin-left: auto; white-space: nowrap; }
+#state-dot { width: 5px; height: 5px; border-radius: 50%; background: #9f9f9f; }
+body[data-phase="recording"] #state-dot { background: #ececec; animation: pulse 1s ease-in-out infinite; }
+body[data-phase="starting"] #state-dot, body[data-phase="transcribing"] #state-dot { animation: pulse 1s ease-in-out infinite; }
+.icon-button { display: grid; place-items: center; width: 28px; height: 28px; border: 0; background: transparent; color: #9f9f9f; border-radius: 6px; padding: 0; }
+.icon-button:hover { color: #ececec; background: #303030; }
+.gear { margin-left: 9px; margin-right: -5px; }
+.recents { display: flex; flex-direction: column; flex: 1; min-height: 0; padding: 0 19px; }
+h2 { margin: 0 0 3px; color: #9f9f9f; font-size: 10px; font-weight: 500; }
+.history { flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: thin; scrollbar-color: #454545 transparent; }
+.empty-state { margin: 0; padding: 40px 0; text-align: center; color: #9f9f9f; font-size: 12px; }
+.transcript-row { padding: 17px 0 16px; border-bottom: 1px solid #303030; }
+.transcript-row:last-child { border-bottom: 0; padding-bottom: 19px; }
+.transcript-meta { display: flex; align-items: center; justify-content: space-between; height: 16px; margin-bottom: 9px; }
+.transcript-time { font-size: 10px; color: #9f9f9f; font-variant-numeric: tabular-nums; }
+.copy-button { width: 24px; height: 24px; margin-right: 0; }
+.copy-button svg { width: 13px; height: 13px; }
+.copy-button[data-copied="true"] { color: #ececec; }
+.transcript-text { margin: 0; font-size: 13px; line-height: 1.6; letter-spacing: -.1px; white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; }
+.transcript-warning { color: #bcbcbc; font-size: 10px; line-height: 1.5; margin: 8px 0 0; }
+.actionbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 15px 10px 19px; border-top: 1px solid #353535; flex-shrink: 0; }
+.shortcut { display: flex; align-items: center; gap: 8px; color: #9f9f9f; font-size: 11px; }
+.shortcut svg { width: 14px; height: 14px; }
+kbd { font: 11px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #ececec; background: #2b2b2b; border: 1px solid #454545; border-radius: 5px; padding: 3px 7px; white-space: nowrap; }
+.footer-actions { display: flex; align-items: center; gap: 3px; }
+.footer-actions svg { width: 14px; height: 14px; }
+.error-message { margin: 0 19px 15px; padding: 9px 11px; background: #2b2b2b; border: 1px solid #454545; border-radius: 7px; color: #d0d0d0; font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+@keyframes pulse { 50% { opacity: .4; } }
+@media (prefers-reduced-motion: reduce) { * { animation: none !important; } }

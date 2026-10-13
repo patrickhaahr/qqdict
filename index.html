@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="dark" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' blob:; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; connect-src 'none'; img-src 'self' data:; media-src 'self' blob:" />
+    <link rel="stylesheet" href="/src/styles.css" />
+    <title>qqdict</title>
+  </head>
+  <body>
+    <main class="app">
+      <header class="titlebar"><h1>qqdict</h1><button id="refresh-button" class="icon-button" type="button" aria-label="Refresh connection and permissions" title="Refresh"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5M6.1 7a7 7 0 0 1 11.5-2L20 8M4 16l2.4 3A7 7 0 0 0 17.9 17"/></svg></button></header>
+      <nav class="tabs" role="tablist" aria-label="qqdict">
+        <button class="tab" id="setup-tab" role="tab" aria-controls="setup-panel" aria-selected="false" tabindex="-1">Setup</button>
+        <button class="tab" id="settings-tab" role="tab" aria-controls="settings-panel" aria-selected="true">Settings</button>
+        <button class="tab" id="history-tab" role="tab" aria-controls="history-panel" aria-selected="false" tabindex="-1">History</button>
+      </nav>
+      <div class="content">
+        <div id="error-panel" class="notice" role="alert" hidden><span id="error-message"></span><button id="dismiss-error" class="icon-button" type="button" aria-label="Dismiss message"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M6 18 18 6"/></svg></button></div>
+        <section class="tab-panel setup-panel" id="setup-panel" role="tabpanel" aria-labelledby="setup-tab" hidden>
+          <div class="setup-heading"><h2 id="setup-title">Set up qqdict</h2><p id="setup-description">Connect your Codex account and allow access on this Mac.</p></div>
+          <div class="setup-progress"><span id="setup-count" role="status" aria-live="polite">Checking access…</span><progress id="setup-progress" value="0" max="4" aria-label="Setup progress"></progress></div>
+          <div class="setup-steps">
+            <div class="setup-step" id="account-step"><span class="step-mark" aria-hidden="true">1</span><div class="step-copy"><h3>Codex account</h3><p id="connection-label">Sign in to Codex, then reconnect.</p></div><span id="connection-state" class="step-state" hidden>Connected</span><button id="reconnect-button" class="setup-action" type="button">Reconnect</button></div>
+            <div class="setup-step" id="microphone-step"><span class="step-mark" aria-hidden="true">2</span><div class="step-copy"><h3>Microphone</h3><p id="microphone-setup-detail">Captures your voice.</p></div><span id="microphone-state" class="step-state" hidden>Allowed</span><button data-permission="microphone" id="microphone-permission" class="setup-action" type="button">Allow</button></div>
+            <div class="setup-step" id="accessibility-step"><span class="step-mark" aria-hidden="true">3</span><div class="step-copy"><h3>Accessibility</h3><p id="accessibility-setup-detail">Pastes into the focused app.</p></div><span id="accessibility-state" class="step-state" hidden>Allowed</span><button data-permission="accessibility" id="accessibility-permission" class="setup-action" type="button">Allow</button></div>
+            <div class="setup-step" id="input-step"><span class="step-mark" aria-hidden="true">4</span><div class="step-copy"><h3>Input Monitoring</h3><p id="input-setup-detail">Detects your shortcut across apps.</p></div><span id="input-state" class="step-state" hidden>Allowed</span><button data-permission="inputMonitoring" id="input-permission" class="setup-action" type="button">Allow</button></div>
+          </div>
+          <button id="setup-continue" class="setup-continue" type="button" hidden>Try dictation<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-5-5 5 5-5 5"/></svg></button>
+        </section>
+        <section class="tab-panel" id="settings-panel" role="tabpanel" aria-labelledby="settings-tab">
+          <div class="preferences">
+            <div class="row"><label class="row-label" for="hotkey-select"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="18" height="12" rx="2"/><path d="M7 10h.01M11 10h.01M15 10h.01M18 10h.01M7 14h.01M11 14h6"/></svg>Shortcut</label><div class="select-wrap"><select id="hotkey-select"><option value="fn">fn</option><option value="right-option">Right Option</option><option value="ctrl-option">Control + Option</option></select><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 10 4 4 4-4"/></svg></div></div>
+            <div class="row"><label class="row-label" for="microphone-select"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5 10v2a7 7 0 0 0 14 0v-2M12 19v3M9 22h6"/></svg>Microphone</label><div class="select-wrap"><select id="microphone-select"><option value="">Default</option></select><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 10 4 4 4-4"/></svg></div></div>
+            <div class="row"><span class="row-label"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8V6a2 2 0 0 1 2-2h5l2 3h7a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8Z"/></svg>Journal</span><button id="open-logs" class="journal-button" type="button" aria-label="Open transcript journal folder"><span id="log-location">~/Dictation</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 17 17 7M7 7h10v10"/></svg></button></div>
+            <div class="row login-row"><label class="row-label" for="launch-at-login"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v9M6.2 5.6a8 8 0 1 0 11.6 0"/></svg>Open at login</label><input id="launch-at-login" type="checkbox" role="switch" /></div>
+          </div>
+          <section class="test" aria-labelledby="test-title">
+            <div class="test-heading"><h2 id="test-title">Try dictation</h2><span id="status-chip" class="status" role="status" aria-live="polite"><span class="status-dot" aria-hidden="true"></span><span id="status-label">Connecting</span></span></div>
+            <button class="hold" id="record-button" type="button" aria-label="Hold to record a test transcript" aria-pressed="false" disabled><svg class="mic-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5 10v2a7 7 0 0 0 14 0v-2M12 19v3"/></svg><span id="test-waveform" class="wave" aria-hidden="true"></span><span id="record-button-label">Hold</span><kbd id="shortcut-key">fn</kbd><span id="recording-time" class="recording-time" hidden>0:00</span></button>
+            <div class="latest"><div class="latest-top"><span id="transcript-status">Latest</span><button id="copy-button" class="copy" type="button" aria-label="Copy latest transcript" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V4H4v12h4"/></svg><span>Copy</span></button></div><p id="transcript" class="transcript" aria-live="polite">No transcripts yet.</p></div>
+          </section>
+        </section>
+        <section class="tab-panel history-panel" id="history-panel" role="tabpanel" aria-labelledby="history-tab" hidden><div class="history-head"><span>Recent</span><span id="history-count"></span></div><div id="history-list"></div></section>
+      </div>
+    </main>
+    <script type="module" src="/src/renderer.ts"></script>
+  </body>
+</html>

@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'none'; img-src 'self' data:" />
+    <link rel="stylesheet" href="/src/overlay.css" />
+    <title>qqdict status</title>
+  </head>
+  <body>
+    <aside id="dictation-pill" class="pill" aria-label="qqdict island" aria-description="Drag to reposition. Use the copy button to copy the last transcript.">
+      <div class="wave" id="wave" aria-hidden="true"></div>
+      <span id="pill-label" class="status" role="status" aria-live="polite" aria-atomic="true">Ready</span>
+      <span class="timer" id="pill-time" aria-label="Recording duration">0:00</span>
+      <button id="pill-copy" class="copy" type="button" title="Copy last transcript" aria-label="Copy last transcript" disabled>
+        <svg class="copy-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2" /><path d="M15 8V4H4v11h4" /></svg>
+        <svg class="check-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6" /></svg>
+      </button>
+    </aside>
+    <script type="module" src="/src/overlay.ts"></script>
+  </body>
+</html>

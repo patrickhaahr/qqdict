@@ -1,0 +1,133 @@
+name: macOS release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            runner: macos-15
+          - arch: x64
+            runner: macos-15-intel
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    env:
+      QQDICT_ARCH: ${{ matrix.arch }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Check release tag and version
+        if: startsWith(github.ref, 'refs/tags/')
+        run: node -e 'if (process.env.GITHUB_REF_NAME !== `v${require("./package.json").version}`) throw new Error("The release tag must match package.json")'
+      - run: npm ci
+      - run: npm test
+      - name: Import optional Developer ID certificate
+        id: certificate
+        env:
+          MACOS_CERTIFICATE_P12_BASE64: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          DEVELOPER_ID_APPLICATION: ${{ secrets.DEVELOPER_ID_APPLICATION }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "$MACOS_CERTIFICATE_P12_BASE64" && -z "$MACOS_CERTIFICATE_PASSWORD" && -z "$DEVELOPER_ID_APPLICATION" ]]; then
+            echo "No Developer ID certificate configured; building an unnotarized preview."
+            exit 0
+          fi
+          if [[ -z "$MACOS_CERTIFICATE_P12_BASE64" || -z "$MACOS_CERTIFICATE_PASSWORD" || -z "$DEVELOPER_ID_APPLICATION" ]]; then
+            echo "All three Developer ID certificate secrets must be configured together."
+            exit 1
+          fi
+          TASK_KEYCHAIN_PASSWORD="$(openssl rand -hex 32)"
+          echo "::add-mask::$TASK_KEYCHAIN_PASSWORD"
+          TASK_KEYCHAIN_PATH="$RUNNER_TEMP/qqdict-release.keychain-db"
+          TASK_CERTIFICATE_PATH="$RUNNER_TEMP/qqdict-release.p12"
+          echo "keychain=$TASK_KEYCHAIN_PATH" >> "$GITHUB_OUTPUT"
+          printf '%s' "$MACOS_CERTIFICATE_P12_BASE64" | base64 --decode > "$TASK_CERTIFICATE_PATH"
+          chmod 600 "$TASK_CERTIFICATE_PATH"
+          security create-keychain -p "$TASK_KEYCHAIN_PASSWORD" "$TASK_KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$TASK_KEYCHAIN_PATH"
+          security unlock-keychain -p "$TASK_KEYCHAIN_PASSWORD" "$TASK_KEYCHAIN_PATH"
+          security import "$TASK_CERTIFICATE_PATH" -P "$MACOS_CERTIFICATE_PASSWORD" -k "$TASK_KEYCHAIN_PATH" -T /usr/bin/codesign >/dev/null
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$TASK_KEYCHAIN_PASSWORD" "$TASK_KEYCHAIN_PATH" >/dev/null
+          security list-keychains -d user -s "$TASK_KEYCHAIN_PATH" login.keychain-db
+          rm -f "$TASK_CERTIFICATE_PATH"
+      - name: Build app and installers
+        env:
+          DEVELOPER_ID_APPLICATION: ${{ secrets.DEVELOPER_ID_APPLICATION }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: npm run dist:mac
+      - name: Verify native helper
+        run: |
+          release/qqdict.app/Contents/Resources/native/DictationBridge --self-test
+          python3 native/test-protocol.py release/qqdict.app/Contents/Resources/native/DictationBridge
+      - uses: actions/upload-artifact@v4
+        with:
+          name: qqdict-mac-${{ matrix.arch }}
+          if-no-files-found: error
+          path: |
+            release/qqdict-*-mac-${{ matrix.arch }}.dmg
+            release/qqdict-*-mac-${{ matrix.arch }}.zip
+            release/SHA256SUMS-${{ matrix.arch }}.txt
+            release/release-metadata-${{ matrix.arch }}.json
+      - name: Remove signing keychain
+        if: always() && steps.certificate.outputs.keychain != ''
+        env:
+          TASK_KEYCHAIN_PATH: ${{ steps.certificate.outputs.keychain }}
+        run: security delete-keychain "$TASK_KEYCHAIN_PATH"
+
+  publish:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: qqdict-mac-*
+          path: release
+          merge-multiple: true
+      - name: Describe the actual release
+        id: notes
+        run: node scripts/release-notes.mjs release > release-notes.md
+      - name: Publish installers
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TASK_RELEASE_TAG: ${{ github.ref_name }}
+          TASK_PRERELEASE: ${{ steps.notes.outputs.prerelease }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TASK_RELEASE_FLAGS=()
+          if [[ "$TASK_PRERELEASE" == 'true' ]]; then TASK_RELEASE_FLAGS+=(--prerelease); fi
+          if gh release view "$TASK_RELEASE_TAG" >/dev/null 2>&1; then
+            gh release edit "$TASK_RELEASE_TAG" --title "qqdict $TASK_RELEASE_TAG" --notes-file release-notes.md --prerelease="$TASK_PRERELEASE"
+            gh release upload "$TASK_RELEASE_TAG" release/*.dmg release/*.zip release/SHA256SUMS-*.txt release/release-metadata-*.json --clobber
+          else
+            gh release create "$TASK_RELEASE_TAG" release/*.dmg release/*.zip release/SHA256SUMS-*.txt release/release-metadata-*.json --verify-tag --title "qqdict $TASK_RELEASE_TAG" --notes-file release-notes.md "${TASK_RELEASE_FLAGS[@]}"
+          fi

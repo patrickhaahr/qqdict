@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="660" height="420" viewBox="0 0 660 420">
+ <rect width="660" height="420" fill="#212121"/>
+ <text x="330" y="72" text-anchor="middle" fill="#f1f1ef" font-family="Helvetica Neue,Helvetica,Arial,sans-serif" font-size="30" font-weight="600" letter-spacing="-1">qqdict</text>
+ <path d="M292 200h76m-10-10 10 10-10 10" fill="none" stroke="#858585" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+ <rect x="127" y="249" width="126" height="33" rx="8" fill="#ededeb"/>
+ <rect x="397" y="249" width="146" height="33" rx="8" fill="#ededeb"/>
+ <text x="330" y="356" text-anchor="middle" fill="#dddddb" font-family="Helvetica Neue,Helvetica,Arial,sans-serif" font-size="14">Drag qqdict to Applications</text>
+ <text x="330" y="381" text-anchor="middle" fill="#909090" font-family="Helvetica Neue,Helvetica,Arial,sans-serif" font-size="11">macOS 13 or later</text>
+</svg>
