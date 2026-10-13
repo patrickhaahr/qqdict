@@ -1,4 +1,4 @@
-<img src="assets/app-icon.png" width="96" alt="qqdict icon">
+<img src="assets/app-icon.png" width="96" alt="qqdict waveform icon">
 
 # qqdict
 

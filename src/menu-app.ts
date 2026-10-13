@@ -55,31 +55,26 @@ function requireRecorder(contents: WebContents, id: number): Take {
 }
 
 function icon(phase: AppState['phase']): Electron.NativeImage {
-  const size = 22, data = Buffer.alloc(size * size * 4);
-  const pixel = (x: number, y: number) => { if (x >= 0 && x < size && y >= 0 && y < size) data[(y * size + x) * 4 + 3] = 255; };
-  if (phase === 'transcribing' || phase === 'starting') {
-    for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
-      const r = Math.hypot(x - 10.5, y - 10.5);
-      if (r > 5.7 && r < 8 && !(x > 13 && y < 8)) pixel(x, y);
+  const scaleFactor = 2, size = 22 * scaleFactor;
+  const data = Buffer.alloc(size * size * 4);
+  const spinning = phase === 'transcribing' || phase === 'starting';
+  const heights = phase === 'recording' ? [7, 15, 11, 17, 7] : [5, 11, 17, 11, 5];
+  for (let row = 0; row < size; row++) for (let column = 0; column < size; column++) {
+    const x = (column + .5) / scaleFactor, y = (row + .5) / scaleFactor;
+    let distance = Infinity;
+    if (spinning) {
+      if (!(x > 13 && y < 8)) distance = Math.abs(Math.hypot(x - 11, y - 11) - 6.85) - 1.15;
+    } else {
+      heights.forEach((height, index) => {
+        // A capsule gives each waveform bar round ends at both display scales.
+        const radius = 1.25, center = 4.5 + index * 3.25;
+        const dy = Math.max(0, Math.abs(y - 11) - (height / 2 - radius));
+        distance = Math.min(distance, Math.hypot(x - center, dy) - radius);
+      });
     }
-  } else if (phase === 'recording') {
-    const heights = [7, 15, 11, 17, 7];
-    heights.forEach((height, column) => {
-      for (let x = 3 + column * 3; x < 5 + column * 3; x++) for (let y = Math.floor((size - height) / 2); y < (size + height) / 2; y++) pixel(x, y);
-    });
-  } else {
-    for (const center of [6.5, 14.5]) {
-      for (let y = 5; y < 15; y++) for (let x = 1; x < 21; x++) {
-        const radius = Math.hypot(x - center, y - 9);
-        if (radius >= 2.1 && radius <= 4) pixel(x, y);
-      }
-      for (let offset = 0; offset < 4; offset++) {
-        pixel(Math.round(center + 1 + offset), 12 + offset);
-        pixel(Math.round(center + 2 + offset), 12 + offset);
-      }
-    }
+    data[(row * size + column) * 4 + 3] = Math.round(Math.max(0, Math.min(1, .5 - distance * scaleFactor)) * 255);
   }
-  const image = nativeImage.createFromBitmap(data, { width: size, height: size });
+  const image = nativeImage.createFromBitmap(data, { width: size, height: size, scaleFactor });
   image.setTemplateImage(true);
   return image;
 }

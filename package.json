@@ -1,6 +1,6 @@
 {
   "name": "qqdict",
-  "version": "0.5.3",
+  "version": "0.5.4",
   "private": true,
   "description": "Minimal push-to-talk dictation for macOS using your existing Codex sign-in.",
   "productName": "qqdict",
@@ -8,6 +8,7 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "build": "npm run typecheck && vite build && esbuild src/main.ts src/preload.ts src/probe.ts --bundle --platform=node --target=node22 --format=cjs --external:electron --external:ws --outdir=dist",
+    "build:icon": "node scripts/generate-app-icon.mjs",
     "build:native": "zsh native/build.sh",
     "package:mac": "npm run build:native && npm run build && node scripts/package-macos.mjs",
     "start": "npm run build:native && npm run build && electron .",
