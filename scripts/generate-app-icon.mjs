@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 const project = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const argumentsList = process.argv.slice(2);
 if (argumentsList.includes('--help')) {
-  console.log('Usage: npm run build:icon -- [--input master.png] [--output AppIcon.icns]');
+  console.log('Usage: pnpm run build:icon [--input master.png] [--output AppIcon.icns]');
   console.log('Defaults: assets/app-icon.png → assets/AppIcon.icns. Requires a square PNG of at least 1024 × 1024 on macOS.');
   process.exit(0);
 }

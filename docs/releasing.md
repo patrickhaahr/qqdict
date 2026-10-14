@@ -4,11 +4,11 @@ Releases contain separate Apple Silicon (`arm64`) and Intel (`x64`) builds. The 
 
 ## App icon
 
-`assets/app-icon.png` is the source logo used by the README and About panel. After changing it, run `npm run build:icon` on a Mac to regenerate `assets/AppIcon.icns` for Finder, the Dock, and installers. Commit both assets together.
+`assets/app-icon.png` is the source logo used by the README and About panel. After changing it, run `pnpm run build:icon` on a Mac to regenerate `assets/AppIcon.icns` for Finder, the Dock, and installers. Commit both assets together.
 
 ## Release files
 
-Use Node.js 22.12 or later and Xcode Command Line Tools on a Mac. The installer builder produces versioned DMG and ZIP files in `release/`, plus a SHA-256 manifest and signing metadata for that architecture. For version 0.5.5:
+Use Node.js 22.12 or later, pnpm 10.9.0, and Xcode Command Line Tools on a Mac. The installer builder produces versioned DMG and ZIP files in `release/`, plus a SHA-256 manifest and signing metadata for that architecture. For version 0.5.5:
 
 ```text
 qqdict-0.5.5-mac-arm64.dmg
@@ -42,11 +42,11 @@ Enter the app-specific password at the hidden prompt. Do not add `--password` to
 Build using the exact signing identity and the saved profile. The identity below is an example; replace it with the name returned above:
 
 ```sh
-npm ci
-npm test
+pnpm install --frozen-lockfile
+pnpm test
 DEVELOPER_ID_APPLICATION='Developer ID Application: Your Name (YOURTEAMID)' \
 APPLE_KEYCHAIN_PROFILE=qqdict-notary \
-npm run dist:mac
+pnpm run dist:mac
 ```
 
 The packaging flow signs nested code from the inside out with a secure timestamp and hardened runtime, then verifies the bundle. It submits an app ZIP to Apple, requires an **Accepted** response, staples and validates the app’s ticket, and checks the app with Gatekeeper. It then creates, signs, submits, and staples the DMG. The downloadable ZIP contains the stapled app.
@@ -88,9 +88,9 @@ For a locally signed release without CI credentials, reserve the version as a Gi
 With no signing or notarization variables configured:
 
 ```sh
-npm ci
-npm test
-npm run dist:mac
+pnpm install --frozen-lockfile
+pnpm test
+pnpm run dist:mac
 ```
 
 These builds are **ad hoc signed, unnotarized previews**. The release description must say so and link to [first-launch instructions](install.md). Do not describe ad hoc signing as Developer ID signing or notarization, or replace signed release assets with preview builds.

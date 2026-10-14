@@ -7,14 +7,14 @@
   "main": "dist/main.js",
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "build": "npm run typecheck && vite build && esbuild src/main.ts src/preload.ts src/probe.ts --bundle --platform=node --target=node22 --format=cjs --external:electron --external:ws --outdir=dist",
+    "build": "pnpm run typecheck && vite build && esbuild src/main.ts src/preload.ts src/probe.ts --bundle --platform=node --target=node22 --format=cjs --external:electron --external:ws --outdir=dist",
     "build:icon": "node scripts/generate-app-icon.mjs",
     "build:native": "zsh native/build.sh",
-    "package:mac": "npm run build:native && npm run build && node scripts/package-macos.mjs",
-    "start": "npm run build:native && npm run build && electron .",
-    "probe": "npm run build && node dist/probe.js",
+    "package:mac": "pnpm run build:native && pnpm run build && node scripts/package-macos.mjs",
+    "start": "pnpm run build:native && pnpm run build && electron .",
+    "probe": "pnpm run build && node dist/probe.js",
     "test": "node --import tsx --test src/*.test.ts && node --test scripts/*.test.mjs",
-    "dist:mac": "npm run package:mac && node scripts/create-dmg.mjs",
+    "dist:mac": "pnpm run package:mac && node scripts/create-dmg.mjs",
     "postinstall": "node node_modules/electron/install.js"
   },
   "dependencies": {
@@ -45,9 +45,5 @@
   "engines": {
     "node": ">=22.12.0"
   },
-  "overrides": {
-    "appdmg": {
-      "image-size": "2.0.3"
-    }
-  }
+  "packageManager": "pnpm@10.9.0"
 }

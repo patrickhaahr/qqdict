@@ -18,15 +18,16 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
-      - run: npm ci
-      - run: npm test
-      - run: npm run build:native
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test
+      - run: pnpm run build:native
       - name: Native behavior and protocol
         run: |
           native/build/DictationBridge --self-test
           python3 native/test-protocol.py
-      - run: npm run build
+      - run: pnpm run build

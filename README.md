@@ -64,27 +64,27 @@ Accessibility enables paste into the focused app; Input Monitoring detects the s
 
 ## Build from source
 
-Use a Mac with **Node.js 22.12 or later** and the **Xcode Command Line Tools** installed. The lockfile pins dependencies.
+Use a Mac with **Node.js 22.12 or later**, **pnpm 10.9.0**, and the **Xcode Command Line Tools** installed. The `packageManager` field pins pnpm; `pnpm-lock.yaml` pins dependencies. Install pnpm through [Corepack](https://pnpm.io/10.x/installation#using-corepack) (`corepack enable pnpm`) to include the native dependency build tools.
 
 ```sh
 git clone https://github.com/qwertyu-alex/qqdict.git
 cd qqdict
-npm ci
-npm test
-npm run start
+pnpm install --frozen-lockfile
+pnpm test
+pnpm run start
 ```
 
-`npm run start` builds the Swift helper and TypeScript app, then launches Electron. For reliable macOS permission registration, use a packaged app:
+`pnpm run start` builds the Swift helper and TypeScript app, then launches Electron. For reliable macOS permission registration, use a packaged app:
 
 ```sh
-npm run package:mac
+pnpm run package:mac
 open release/qqdict.app
 ```
 
 Create a drag-to-Applications installer and a ZIP:
 
 ```sh
-npm run dist:mac
+pnpm run dist:mac
 ```
 
 Each build targets the architecture of the installed Electron runtime. Separate Apple Silicon and Intel builds are produced by the release workflow; this is not a universal binary. See [release and signing instructions](docs/releasing.md) and the [native bridge notes](native/README.md).

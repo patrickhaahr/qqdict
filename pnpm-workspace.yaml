@@ -1,0 +1,9 @@
+overrides:
+  appdmg>image-size: 2.0.3
+
+onlyBuiltDependencies:
+  - electron
+  - esbuild
+  - fs-xattr
+  - fsevents
+  - macos-alias

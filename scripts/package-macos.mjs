@@ -3,7 +3,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { developerSigned, notarizationArguments, notarize, run, sign } from './macos-signing.mjs';
 
-// Package the already-built application. The npm package:mac command builds first.
+// Package the already-built application. The pnpm package:mac command builds first.
 // Keep this dependency-free so the local prototype needs no packaging service.
 const project = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const productName = 'qqdict';
@@ -30,7 +30,7 @@ if (process.platform !== 'darwin') throw new Error('macOS packaging must run on 
 try {
   await access(electronBundle);
 } catch {
-  throw new Error('Electron runtime is missing. Run npm ci with lifecycle scripts enabled, or run node node_modules/electron/install.js, before packaging.');
+  throw new Error('Electron runtime is missing. Run pnpm install --frozen-lockfile with lifecycle scripts enabled, or run node node_modules/electron/install.js, before packaging.');
 }
 await Promise.all([
   access(nativeBridge), access(appIcon), access(rendererIcon), access(entitlements),
@@ -68,8 +68,8 @@ async function isMachO(path) {
   }
 }
 
-// A release must contain matching Electron and native architectures. npm ci
-// installs the Electron binary for its runner; use a matching macOS runner in CI.
+// A release must contain matching Electron and native architectures. Installation
+// downloads Electron for its runner; use a matching macOS runner in CI.
 const expectedArch = arch === 'x64' ? 'x86_64' : 'arm64';
 for (const executable of [join(electronBundle, 'Contents/MacOS/Electron'), nativeBridge]) {
   const actual = run('/usr/bin/lipo', ['-archs', executable]).trim().split(/\s+/);
@@ -88,7 +88,8 @@ try {
   const appResources = join(resources, 'app');
   await mkdir(join(appResources, 'node_modules'), { recursive: true });
   await cp(join(project, 'dist'), join(appResources, 'dist'), { recursive: true });
-  await cp(join(project, 'node_modules/ws'), join(appResources, 'node_modules/ws'), { recursive: true });
+  // Materialize pnpm's dependency symlink so the app works outside this checkout.
+  await cp(join(project, 'node_modules/ws'), join(appResources, 'node_modules/ws'), { recursive: true, dereference: true });
   await mkdir(join(appResources, 'assets'), { recursive: true });
   await cp(rendererIcon, join(appResources, 'assets/app-icon.png'));
   await cp(appIcon, join(resources, 'AppIcon.icns'));

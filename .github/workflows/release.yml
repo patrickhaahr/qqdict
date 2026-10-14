@@ -28,15 +28,16 @@ jobs:
       QQDICT_ARCH: ${{ matrix.arch }}
     steps:
       - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
+          cache: pnpm
       - name: Check release tag and version
         if: startsWith(github.ref, 'refs/tags/')
         run: node -e 'if (process.env.GITHUB_REF_NAME !== `v${require("./package.json").version}`) throw new Error("The release tag must match package.json")'
-      - run: npm ci
-      - run: npm test
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test
       - name: Import optional Developer ID certificate
         id: certificate
         env:
@@ -74,7 +75,7 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        run: npm run dist:mac
+        run: pnpm run dist:mac
       - name: Verify native helper
         run: |
           release/qqdict.app/Contents/Resources/native/DictationBridge --self-test
