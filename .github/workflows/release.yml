@@ -159,7 +159,7 @@ jobs:
             fi
             gh release upload "$TASK_RELEASE_TAG" release/*.dmg release/*.zip release/SHA256SUMS-*.txt release/release-metadata-*.json --clobber
           else
-            gh release create "$TASK_RELEASE_TAG" release/*.dmg release/*.zip release/SHA256SUMS-*.txt release/release-metadata-*.json --draft --verify-tag --title "qqdict $TASK_RELEASE_TAG" --notes-file release-notes.md "${TASK_RELEASE_FLAGS[@]}"
+            gh release create "$TASK_RELEASE_TAG" release/*.dmg release/*.zip release/SHA256SUMS-*.txt release/release-metadata-*.json --draft --verify-tag --title "qqdict $TASK_RELEASE_TAG" --notes-file release-notes.md ${TASK_RELEASE_FLAGS[@]+"${TASK_RELEASE_FLAGS[@]}"}
           fi
           # Keep new releases in draft (and existing previews as prereleases)
           # until every architecture is present. Only then expose stable ZIPs
