@@ -17,6 +17,7 @@ export type AppState = {
   detail: string;
   hotkey: Hotkey;
   microphoneId: string;
+  microphoneName: string;
   launchAtLogin: boolean;
   permissions: { microphone: Permission; accessibility: Permission; inputMonitoring: Permission };
   history: TranscriptEntry[];
@@ -47,6 +48,7 @@ export interface DictationAPI {
   showSettings(): Promise<void>;
   quit(): Promise<void>;
   ready(): Promise<void>;
+  reportCapturing(takeId: number, microphoneName: string): void;
   reportLevel(level: number): void;
   reportError(message: string, takeId: number): void;
   start(takeId: number): Promise<void>;

@@ -47,6 +47,9 @@ try:
     check(request("setHotkey", hotkey="unsupported")["error"] == "invalid_hotkey")
     clipboard_version = request("clipboardVersion")["changeCount"]
     check(isinstance(clipboard_version, int))
+    invalid_stage = request("stageClipboard", text="test words ", targetPid=0, focusId="test-invalid-focus-token")
+    check(not invalid_stage["ok"] and invalid_stage["error"] in ["accessibility_required", "focus_required"])
+    check(request("clipboardVersion")["changeCount"] == clipboard_version)
     check(request("paste", targetPid=0, focusId="test-invalid-focus-token")["error"] == "invalid_clipboard_version")
     check(request("paste", targetPid=0, focusId="test-invalid-focus-token", changeCount=-1)["error"] == "invalid_clipboard_version")
     # A fabricated focus token must be rejected before any key is posted.

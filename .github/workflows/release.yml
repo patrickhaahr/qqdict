@@ -26,6 +26,7 @@ jobs:
     timeout-minutes: 90
     env:
       QQDICT_ARCH: ${{ matrix.arch }}
+      QQDICT_CHANNEL: production
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -126,7 +127,14 @@ jobs:
           set -euo pipefail
           TASK_RELEASE_FLAGS=()
           if [[ "$TASK_PRERELEASE" == 'true' ]]; then TASK_RELEASE_FLAGS+=(--prerelease); fi
-          if TASK_EXISTING_PRERELEASE="$(gh release view "$TASK_RELEASE_TAG" --json isPrerelease --jq '.isPrerelease' 2>/dev/null)"; then
+          if TASK_EXISTING_STATE="$(gh release view "$TASK_RELEASE_TAG" --json isPrerelease,isDraft --jq '[.isPrerelease, .isDraft] | @tsv' 2>/dev/null)"; then
+            read -r TASK_EXISTING_PRERELEASE TASK_EXISTING_DRAFT <<< "$TASK_EXISTING_STATE"
+            # Installed apps can already be downloading this release. A stable
+            # version is immutable; corrections must use a new version and tag.
+            if [[ "$TASK_EXISTING_PRERELEASE" == 'false' && "$TASK_EXISTING_DRAFT" == 'false' ]]; then
+              echo "::notice::Skipping publication: $TASK_RELEASE_TAG is already stable. Publish a new version to deliver another update."
+              exit 0
+            fi
             # A locally notarized release can share its tag with an unsigned CI
             # build. Never replace that release or its installers with a preview.
             if [[ "$TASK_PRERELEASE" == 'true' && "$TASK_EXISTING_PRERELEASE" == 'false' ]]; then
@@ -149,8 +157,11 @@ jobs:
                 exit 0
               fi
             fi
-            gh release edit "$TASK_RELEASE_TAG" --title "qqdict $TASK_RELEASE_TAG" --notes-file release-notes.md --prerelease="$TASK_PRERELEASE"
             gh release upload "$TASK_RELEASE_TAG" release/*.dmg release/*.zip release/SHA256SUMS-*.txt release/release-metadata-*.json --clobber
           else
-            gh release create "$TASK_RELEASE_TAG" release/*.dmg release/*.zip release/SHA256SUMS-*.txt release/release-metadata-*.json --verify-tag --title "qqdict $TASK_RELEASE_TAG" --notes-file release-notes.md "${TASK_RELEASE_FLAGS[@]}"
+            gh release create "$TASK_RELEASE_TAG" release/*.dmg release/*.zip release/SHA256SUMS-*.txt release/release-metadata-*.json --draft --verify-tag --title "qqdict $TASK_RELEASE_TAG" --notes-file release-notes.md "${TASK_RELEASE_FLAGS[@]}"
           fi
+          # Keep new releases in draft (and existing previews as prereleases)
+          # until every architecture is present. Only then expose stable ZIPs
+          # to update.electronjs.org and installed applications.
+          gh release edit "$TASK_RELEASE_TAG" --draft=false --title "qqdict $TASK_RELEASE_TAG" --notes-file release-notes.md --prerelease="$TASK_PRERELEASE"

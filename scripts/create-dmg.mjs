@@ -5,26 +5,31 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadAppdmg } from './appdmg-adapter.mjs';
 import { developerSigned, notarizationArguments, notarize, run, sign } from './macos-signing.mjs';
+import { buildIdentity } from './build-channel.mjs';
 
 const appdmg = loadAppdmg();
 const project = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const release = join(project, 'release');
+const { channel, productName, bundleId, slug, iconName } = buildIdentity();
 const arch = process.env.QQDICT_ARCH || process.arch;
+const artifactSuffix = channel === 'nightly' ? `nightly-${arch}` : arch;
 const { version } = JSON.parse(await readFile(join(project, 'package.json'), 'utf8'));
 if (process.platform !== 'darwin') throw new Error('macOS disk images must be built on macOS.');
 if (!['arm64', 'x64'].includes(arch)) throw new Error('QQDICT_ARCH must be arm64 or x64.');
 if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(version)) throw new Error('Invalid release version.');
-const info = JSON.parse(await readFile(join(release, `build-info-${arch}.json`), 'utf8'));
-if (info.arch !== arch || info.version !== version) throw new Error('Build qqdict.app for this version and architecture before creating installers.');
+const info = JSON.parse(await readFile(join(release, `build-info-${channel}-${arch}.json`), 'utf8'));
+if (info.arch !== arch || info.version !== version || info.channel !== channel || info.bundleId !== bundleId || info.productName !== productName) {
+  throw new Error(`Build ${productName}.app for this version and architecture before creating installers.`);
+}
 const requestedNotarization = notarizationArguments();
-if (requestedNotarization && !info.notarized) throw new Error('Notarize qqdict.app before building a notarized installer.');
-const bundle = join(release, 'qqdict.app');
+if (requestedNotarization && !info.notarized) throw new Error(`Notarize ${productName}.app before building a notarized installer.`);
+const bundle = join(release, `${productName}.app`);
 const background = join(project, 'assets/dmg-background.png');
-const icon = join(project, 'assets/AppIcon.icns');
+const icon = join(project, 'assets', `${iconName}.icns`);
 await Promise.all([access(bundle), access(background), access(icon)]);
 run('/usr/bin/codesign', ['--verify', '--deep', '--strict', bundle]);
-const stem = `qqdict-${version}-mac-${arch}`;
-const staging = join(release, `.qqdict-installer-${arch}`);
+const stem = `${slug}-${version}-mac-${arch}`;
+const staging = join(release, `.${slug}-installer-${arch}`);
 await mkdir(staging, { recursive: true });
 try {
   const stagedDmg = join(staging, `${stem}.dmg`);
@@ -39,7 +44,7 @@ try {
       target: stagedDmg,
       basepath: project,
       specification: {
-        title: 'qqdict', icon, background,
+        title: productName, icon, background,
         'background-color': '#212121', 'icon-size': 88,
         window: { position: { x: 200, y: 180 }, size: { width: 660, height: 420 } },
         format: 'UDZO', filesystem: 'APFS',
@@ -52,7 +57,7 @@ try {
     image.once('finish', resolveImage);
     image.once('error', rejectImage);
   });
-  if (developerSigned) sign(stagedDmg, { identifier: 'io.github.qwertyu-alex.qqdict.disk-image' });
+  if (developerSigned) sign(stagedDmg, { identifier: `${bundleId}.disk-image` });
   const diskImageNotarized = requestedNotarization ? notarize(stagedDmg) : false;
   run('/usr/bin/hdiutil', ['verify', stagedDmg]);
   run('/usr/bin/ditto', ['-c', '-k', '--sequesterRsrc', '--keepParent', bundle, stagedZip]);
@@ -64,9 +69,9 @@ try {
     artifacts.push({ filename, sha256: hash.digest('hex'), bytes: (await stat(staged)).size });
     await rename(staged, join(release, filename));
   }
-  await writeFile(join(release, `SHA256SUMS-${arch}.txt`), artifacts.map(item => `${item.sha256}  ${item.filename}\n`).join(''));
-  await writeFile(join(release, `release-metadata-${arch}.json`), `${JSON.stringify({
-    product: 'qqdict', version, arch, minimumMacOS: '13.0',
+  await writeFile(join(release, `SHA256SUMS-${artifactSuffix}.txt`), artifacts.map(item => `${item.sha256}  ${item.filename}\n`).join(''));
+  await writeFile(join(release, `release-metadata-${artifactSuffix}.json`), `${JSON.stringify({
+    product: productName, channel, version, arch, minimumMacOS: '13.0',
     signing: info.signing, notarized: info.notarized,
     diskImageSigning: developerSigned ? 'developer-id' : 'unsigned', diskImageNotarized,
     artifacts,

@@ -102,6 +102,11 @@ export class DictationStore {
   get history(): TranscriptEntry[] { return this.savedHistory.map(copyTranscript); }
   get islandPlacement(): IslandPlacement { return { ...this.savedIslandPlacement }; }
 
+  /** Drain pending writes and persist in-memory recovery before an update. */
+  flush(): Promise<void> {
+    return this.enqueue(() => this.saveCache());
+  }
+
   load(): Promise<void> {
     return this.enqueue(async () => {
       if (this.loaded) return;

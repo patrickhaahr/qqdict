@@ -33,6 +33,32 @@ test('protected or unavailable focus never changes the clipboard', async () => {
   assert.deepEqual(commands, []);
 });
 
+test('empty dictation never stages or posts a space', async () => {
+  const commands: string[] = [];
+  const bridge = fakeBridge(async command => { commands.push(command); return {}; });
+  await pasteTranscript(bridge, ' \t\n ', target);
+  assert.deepEqual(commands, []);
+});
+
+test('dictation stages exactly one trailing space, including after punctuation', async () => {
+  for (const text of ['Hello', 'Hello. ', '.  ', '  Hello! \n']) {
+    const controller = new AbortController();
+    const bridge = fakeBridge(async (command, fields) => {
+      if (command === 'stageClipboard') {
+        assert.equal(fields.text, text.trim() + ' ');
+        assert.equal(fields.focusId, target.focusId);
+        assert.equal(fields.targetPid, target.targetPid);
+        controller.abort();
+        return { changeCount: 27, restoreAvailable: true };
+      }
+      assert.equal(command, 'restoreClipboard');
+      return { restored: true };
+    });
+    const operation = pasteTranscript(bridge, text, target, controller.signal);
+    await assert.rejects(operation, { name: 'AbortError' });
+  }
+});
+
 test('cancellation during modifier-release delay restores the clipboard without posting Cmd+V', async () => {
   const controller = new AbortController();
   const staged = deferred();
@@ -49,7 +75,7 @@ test('cancellation during modifier-release delay restores the clipboard without 
   controller.abort();
   await rejection;
   assert.deepEqual(commands, [
-    { command: 'stageClipboard', fields: { text: 'cancelled words' } },
+    { command: 'stageClipboard', fields: { text: 'cancelled words ', ...target } },
     { command: 'restoreClipboard', fields: { changeCount: 27 } },
   ]);
 });
@@ -112,7 +138,7 @@ test('paste supplies the exact staged clipboard version for native validation', 
   });
   await pasteTranscript(bridge, 'dictated words', target);
   assert.deepEqual(requests, [
-    { command: 'stageClipboard', fields: { text: 'dictated words' } },
+    { command: 'stageClipboard', fields: { text: 'dictated words ', ...target } },
     { command: 'paste', fields: { ...target, changeCount: 312 } },
     { command: 'restoreClipboard', fields: { changeCount: 312 } },
   ]);

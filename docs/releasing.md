@@ -4,15 +4,15 @@ Releases contain separate Apple Silicon (`arm64`) and Intel (`x64`) builds. The 
 
 ## App icon
 
-`assets/app-icon.png` is the source logo used by the README and About panel. After changing it, run `pnpm run build:icon` on a Mac to regenerate `assets/AppIcon.icns` for Finder, the Dock, and installers. Commit both assets together.
+`assets/app-icon.png` is the production logo; `assets/app-icon-nightly.png` is the indigo Nightly variant with a crescent moon. Packaging selects the matching icon for Finder, the Dock, the About panel, and installers. After changing a source PNG, run `pnpm run build:icon` for Nightly or `QQDICT_CHANNEL=production pnpm run build:icon` for production on a Mac. Commit the PNG and its generated ICNS together (`AppIconNightly.icns` or `AppIcon.icns`). The README uses the production logo.
 
 ## Release files
 
-Use Node.js 22.12 or later, pnpm 10.9.0, and Xcode Command Line Tools on a Mac. The installer builder produces versioned DMG and ZIP files in `release/`, plus a SHA-256 manifest and signing metadata for that architecture. For version 0.5.5:
+Use Node.js 22.12 or later, pnpm 10.9.0, and Xcode Command Line Tools on a Mac. The installer builder produces versioned DMG and ZIP files in `release/`, plus a SHA-256 manifest and signing metadata for that architecture. For version 0.5.6:
 
 ```text
-qqdict-0.5.5-mac-arm64.dmg
-qqdict-0.5.5-mac-arm64.zip
+qqdict-0.5.6-mac-arm64.dmg
+qqdict-0.5.6-mac-arm64.zip
 SHA256SUMS-arm64.txt
 release-metadata-arm64.json
 ```
@@ -46,6 +46,7 @@ pnpm install --frozen-lockfile
 pnpm test
 DEVELOPER_ID_APPLICATION='Developer ID Application: Your Name (YOURTEAMID)' \
 APPLE_KEYCHAIN_PROFILE=qqdict-notary \
+QQDICT_CHANNEL=production \
 pnpm run dist:mac
 ```
 
@@ -57,14 +58,14 @@ Confirm the result before publishing a notarized stable release:
 codesign --verify --deep --strict release/qqdict.app
 xcrun stapler validate release/qqdict.app
 spctl --assess --type execute release/qqdict.app
-xcrun stapler validate release/qqdict-0.5.5-mac-arm64.dmg
+xcrun stapler validate release/qqdict-0.5.6-mac-arm64.dmg
 ```
 
 Use the appropriate version and architecture in the DMG path. Inspect each `release-metadata-{arch}.json`: `signing` and `diskImageSigning` must both be `developer-id`, and `notarized` and `diskImageNotarized` must both be `true`. A successful build or certificate alone is not evidence of notarization.
 
 ## GitHub release workflow
 
-The workflow runs tests and builds on macOS runners for both architectures when a `v*` tag is pushed. Keep `package.json`, the lockfile, and the tag version consistent. Use a `v` prefix with the package version, for example `v0.5.5`.
+The workflow runs tests and builds on macOS runners for both architectures when a `v*` tag is pushed. It sets `QQDICT_CHANNEL=production` to retain the production app name, bundle identifier, and artifact filenames. Local builds default to `nightly`; use `QQDICT_CHANNEL=production` explicitly when building production releases locally, regardless of signing credentials. Keep `package.json`, the lockfile, and the tag version consistent. Use a `v` prefix with the package version, for example `v0.5.6`.
 
 The local Keychain profile is available only on your Mac. GitHub Actions needs its own certificate import and notarization configuration. Export the Developer ID Application certificate **and private key** together as a password-protected `.p12`, then configure all six repository Actions secrets:
 
@@ -79,7 +80,9 @@ The local Keychain profile is available only on your Mac. GitHub Actions needs i
 
 Do not commit the `.p12`, its Base64 contents, or any password. The workflow imports the certificate into a temporary signing Keychain and removes that Keychain after the build. The app-specific password is passed through Actions secrets; it is not the password for your Apple account.
 
-The workflow publishes versioned assets and signing metadata. Check both jobs and inspect the downloadable assets before announcing the release. Unnotarized builds are prereleases. The README links directly to `v0.5.5`; update its versioned links for each release. GitHub’s `/releases/latest` link skips prereleases and can be used for stable notarized releases.
+The workflow publishes versioned assets and signing metadata. Check both jobs and inspect the downloadable assets before announcing the release. Unnotarized builds are prereleases. The README links directly to `v0.5.6`; update its versioned links for each release. GitHub’s `/releases/latest` link skips prereleases and can be used for stable notarized releases.
+
+Production builds now include [automatic updates](automatic-updates.md). New releases remain drafts until all assets have uploaded, and published stable assets are preserved on workflow reruns. Always use a new version and tag for a correction. Keep both architecture ZIPs, the production bundle ID, and the Developer ID signing team consistent so installed apps can update. Inspect `qqdict.app/Contents/Resources/update-config.json`: `enabled` must be `true` in a notarized production release. Source, Nightly, and unnotarized builds leave updates disabled.
 
 For a locally signed release without CI credentials, reserve the version as a GitHub draft **without** the prerelease flag before pushing its tag. Upload the verified local installers, checksums, and both architectures’ metadata before publishing the draft. Publish pending notarization as a prerelease; publish as stable only after app and DMG notarization verifies. The workflow protects stable releases and non-prerelease drafts from preview publication, and also preserves Developer ID signed prereleases from unsigned CI builds.
 
@@ -93,7 +96,9 @@ pnpm test
 pnpm run dist:mac
 ```
 
-These builds are **ad hoc signed, unnotarized previews**. The release description must say so and link to [first-launch instructions](install.md). Do not describe ad hoc signing as Developer ID signing or notarization, or replace signed release assets with preview builds.
+These builds produce `release/qqdict Nightly.app` and `qqdict-nightly-{version}-mac-{arch}` installers. Nightly uses `io.github.qwertyu-alex.qqdict.nightly`, its own helper identities, `~/Library/Application Support/qqdict Nightly/`, and `~/Dictation Nightly/`. It does not import production or legacy history. `Launch.command` also opens Nightly. Grant permissions separately, and quit the other copy before dictating to avoid duplicate shortcut handling.
+
+These builds are **ad hoc signed, unnotarized previews**. For a production-identity preview, set `QQDICT_CHANNEL=production` on the build command. The release description must say so and link to [first-launch instructions](install.md). Do not describe ad hoc signing as Developer ID signing or notarization, or replace signed release assets with preview builds.
 
 A Developer ID–signed build awaiting Apple notarization can also be published as a prerelease. Describe it as **signed, not yet notarized**, preserve that status in its metadata, and link to the first-launch guide. Update the downloads and signing claims only after Apple accepts the submissions and the stapled tickets verify.
 

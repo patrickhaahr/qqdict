@@ -1,7 +1,7 @@
-import { app, BrowserWindow, clipboard, ipcMain, Menu, nativeImage, powerMonitor, screen, session, shell, systemPreferences, Tray, type WebContents } from 'electron';
+import { app, autoUpdater, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, powerMonitor, screen, session, shell, systemPreferences, Tray, type WebContents } from 'electron';
 import path from 'node:path';
 import os from 'node:os';
-import { mkdir } from 'node:fs/promises';
+import { mkdir, readFile } from 'node:fs/promises';
 import { CodexHarness } from './harness';
 import { DictationTransport, safeMessage, type DictationEvent } from './transport';
 import { MacBridge, type FocusTarget } from './native';
@@ -9,7 +9,8 @@ import { DictationStore } from './store';
 import { pasteTranscript } from './paste';
 import { nearestIslandAnchor, positionForAnchor } from './island-position';
 import { migrateLegacyHistory } from './storage';
-import { PRODUCT_NAME, PRODUCT_VERSION, PRODUCT_REPOSITORY } from './product';
+import { BUILD_IDENTITY, PRODUCT_NAME, PRODUCT_VERSION, PRODUCT_REPOSITORY } from './product';
+import { AppUpdater, updateAvailability } from './updates';
 import type { AppEvent, AppState, Settings, TranscriptEntry } from './contracts';
 
 app.setName(PRODUCT_NAME);
@@ -21,7 +22,11 @@ let overlay: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let store: DictationStore;
 let bridge: MacBridge;
+let updates: AppUpdater | undefined;
 let quitting = false;
+let screenLocked = false;
+let suspended = false;
+let pendingSettings = 0;
 let recorderReady = false;
 let nextTakeId = 1;
 let fadeTimer: ReturnType<typeof setTimeout> | null = null;
@@ -29,13 +34,14 @@ let overlayHovered = false;
 type OverlayDrag = { cursor: Electron.Point; bounds: Electron.Rectangle; moved: boolean };
 let overlayDrag: OverlayDrag | null = null;
 const harness = new CodexHarness();
-type Take = { id: number; manual: boolean; target: FocusTarget; stopRequested: boolean; commandStarted: boolean; startedAt: number; finishing?: Promise<void>; partial: string; abort: AbortController };
+type Take = { id: number; manual: boolean; target: FocusTarget; focusReady: Promise<void>; stopRequested: boolean; commandStarted: boolean; startedAt: number; finishing?: Promise<void>; partial: string; abort: AbortController };
 let take: Take | null = null;
+const pendingFinalizations = new Set<Promise<void>>();
 const state: AppState = {
   phase: 'idle', connected: false, label: 'Checking Codex sign-in…', detail: '',
-  hotkey: 'fn', microphoneId: '', launchAtLogin: false,
+  hotkey: 'fn', microphoneId: '', microphoneName: '', launchAtLogin: false,
   permissions: { microphone: 'not-determined', accessibility: 'not-determined', inputMonitoring: 'not-determined' },
-  history: [], logDirectory: path.join(os.homedir(), 'Dictation'),
+  history: [], logDirectory: path.join(os.homedir(), BUILD_IDENTITY.journalDirectory),
   level: 0, elapsedSeconds: 0, maxRecordingSeconds: 300,
 };
 const transport = new DictationTransport(harness, handleTransport);
@@ -47,6 +53,7 @@ function publish(): void {
   if (quitting) return;
   // The nonactivating panel accepts dragging in every phase without taking typing focus.
   send({ type: 'state', state: snapshot() }); updateTray();
+  updates?.activityChanged();
 }
 function validSender(contents: WebContents): boolean { return surfaces().some((window) => window.webContents === contents); }
 function requireRecorder(contents: WebContents, id: number): Take {
@@ -82,7 +89,8 @@ function icon(phase: AppState['phase']): Electron.NativeImage {
 function updateTray(): void {
   if (!tray || tray.isDestroyed()) return;
   tray?.setImage(icon(state.phase));
-  tray?.setToolTip(`${PRODUCT_NAME} · ${state.phase === 'idle' ? 'Hold ' + state.hotkey + ' to dictate' : state.phase}`);
+  const updateHint = updates?.status.phase === 'ready' ? ' · Update ready (right-click to restart)' : '';
+  tray?.setToolTip(`${PRODUCT_NAME} · ${state.phase === 'idle' ? 'Hold ' + state.hotkey + ' to dictate' : state.phase}${updateHint}`);
   tray?.setTitle(state.phase === 'recording' ? '•' : state.phase === 'transcribing' ? '…' : '');
 }
 
@@ -149,6 +157,7 @@ function endOverlayDrag(): void {
     });
   }
   if (!take && overlay?.isVisible()) dismissOverlay(1500);
+  updates?.activityChanged();
 }
 
 function dismissOverlay(delay = 4000): void {
@@ -195,25 +204,24 @@ async function refreshConnection(): Promise<void> {
 }
 
 async function begin(manual: boolean): Promise<void> {
-  if (take || !recorderReady) return;
+  if (quitting || updates?.restartPending || take || !recorderReady) return;
   if (!state.connected || state.permissions.microphone !== 'granted') {
     state.detail = !state.connected ? 'Open Codex and sign in with ChatGPT, then reconnect here.' : 'Allow microphone access in setup before dictating.';
     state.phase = 'error'; publish(); showSetup(); return;
   }
-  const current: Take = { id: nextTakeId++, manual, target: {}, stopRequested: false, commandStarted: false, startedAt: Date.now(), partial: '', abort: new AbortController() };
+  const current: Take = { id: nextTakeId++, manual, target: {}, focusReady: Promise.resolve(), stopRequested: false, commandStarted: false, startedAt: Date.now(), partial: '', abort: new AbortController() };
   take = current;
-  state.phase = 'starting'; state.detail = 'Opening microphone…'; state.elapsedSeconds = 0; state.level = 0;
-  popover?.hide(); publish(); showOverlay();
+  state.phase = 'starting'; state.detail = 'Opening microphone…'; state.elapsedSeconds = 0; state.level = 0; state.microphoneName = '';
+  // Focus metadata is needed only when pasting. Never hold up capture for AX.
   if (!manual) {
-    try { current.target = await bridge.captureFocus(); } catch { /* Dictation remains recoverable in history. */ }
-  }
-  if (take !== current) {
-    if (current.target.focusId) void bridge.request('discardFocus', { focusId: current.target.focusId }).catch(() => {});
-    return;
+    current.focusReady = bridge.captureFocus().then((target) => {
+      if (take === current) current.target = target;
+      else if (target.focusId) void bridge.request('discardFocus', { focusId: target.focusId }).catch(() => {});
+    }).catch(() => { /* Dictation remains recoverable in history. */ });
   }
   current.commandStarted = true;
   recorder!.webContents.send('dictation:event', { type: 'command', command: 'start', takeId: current.id } satisfies AppEvent);
-  if (current.stopRequested) recorder!.webContents.send('dictation:event', { type: 'command', command: 'stop', takeId: current.id } satisfies AppEvent);
+  popover?.hide(); publish(); showOverlay();
 }
 
 function end(): void {
@@ -268,6 +276,8 @@ function finalize(text: string, current: Take): Promise<void> {
     if (!entry || take !== current) return;
     if (!current.manual) {
       try {
+        await current.focusReady;
+        if (take !== current) return;
         await pasteTranscript(bridge, text, current.target, current.abort.signal);
         if (take !== current) return;
         await store.updateTranscript(entry.id, { pasted: true }).catch(() => { historyWriteFailed = true; });
@@ -285,7 +295,13 @@ function finalize(text: string, current: Take): Promise<void> {
     if (current.target.focusId) void bridge.request('discardFocus', { focusId: current.target.focusId }).catch(() => {});
     if (take !== current) return;
     take = null; state.phase = entry.logError ? 'error' : 'idle'; publish(); dismissOverlay(6000);
-  })().catch((error) => { if (take === current) fail(safeMessage(error)); });
+  })().catch((error) => { if (take === current) fail(safeMessage(error)); }).finally(() => {
+    pendingFinalizations.delete(current.finishing!);
+    updates?.activityChanged();
+  });
+  // cancel() and fail() clear `take` before asynchronous save/paste cleanup has
+  // settled. Updates must wait for that cleanup, including clipboard restore.
+  pendingFinalizations.add(current.finishing);
   return current.finishing;
 }
 
@@ -294,9 +310,7 @@ function handleTransport(event: DictationEvent): void {
   if (!current) return;
   if (current.finishing) return;
   recorder?.webContents.send('dictation:event', { ...event, takeId: current.id } satisfies AppEvent);
-  if (event.type === 'status' && event.status === 'recording' && !current.stopRequested) {
-    state.phase = 'recording'; state.detail = 'Listening'; publish();
-  } else if (event.type === 'partial') current.partial = event.text ?? '';
+  if (event.type === 'partial') current.partial = event.text ?? '';
   else if (event.type === 'final') void finalize(event.text ?? '', current);
   else if (event.type === 'error') fail(event.text ?? 'Dictation failed.');
 }
@@ -311,8 +325,47 @@ function createSurface(options: Electron.BrowserWindowConstructorOptions): Brows
   return window;
 }
 
+function updateMenuItem(): Electron.MenuItemConstructorOptions {
+  return { id: 'check-for-updates', ...updates!.menuItem, click: () => updates?.check(true) };
+}
+
+function updateBusy(): boolean {
+  return !!take || pendingFinalizations.size > 0 || pendingSettings > 0 || !!overlayDrag || screenLocked || suspended;
+}
+
+async function initializeUpdates(): Promise<void> {
+  let configuration: unknown;
+  if (app.isPackaged && BUILD_IDENTITY.channel === 'production') {
+    try { configuration = JSON.parse(await readFile(path.join(process.resourcesPath, 'update-config.json'), 'utf8')); }
+    catch { /* Older or locally packaged apps remain on manual downloads. */ }
+  }
+  updates = new AppUpdater({
+    availability: updateAvailability({
+      isPackaged: app.isPackaged, channel: BUILD_IDENTITY.channel, platform: process.platform, arch: process.arch,
+      version: app.getVersion(), bundleId: BUILD_IDENTITY.bundleId,
+      inApplicationsFolder: app.isPackaged && app.isInApplicationsFolder(), configuration,
+    }),
+    updater: autoUpdater,
+    isBusy: updateBusy,
+    prepareInstall: () => store.flush(),
+    showMessage: async (options) => {
+      popover?.hide();
+      const result = setup && !setup.isDestroyed() && setup.isVisible()
+        ? await dialog.showMessageBox(setup, options) : await dialog.showMessageBox(options);
+      return result.response;
+    },
+    onChange: () => {
+      if (updates?.status.phase === 'ready') quitting = false;
+      const item = Menu.getApplicationMenu()?.getMenuItemById('check-for-updates');
+      if (item) Object.assign(item, updates!.menuItem);
+      updateTray();
+    },
+  });
+}
+
 async function initialize(): Promise<void> {
-  const migrated = await migrateLegacyHistory(app.getPath('userData'), path.join(app.getPath('appData'), 'Codex Dictation'));
+  const migrated = BUILD_IDENTITY.channel === 'production'
+    && await migrateLegacyHistory(app.getPath('userData'), path.join(app.getPath('appData'), 'Codex Dictation'));
   store = new DictationStore({ dataDirectory: app.getPath('userData'), logDirectory: state.logDirectory });
   await store.load();
   if (app.isPackaged) {
@@ -359,22 +412,31 @@ async function initialize(): Promise<void> {
   ]);
   tray = new Tray(icon('idle')); tray.on('click', togglePopover); updateTray();
   await Promise.all([refreshPermissions(), refreshConnection()]);
+  await initializeUpdates();
+  tray.on('right-click', () => tray?.popUpContextMenu(Menu.buildFromTemplate([
+    { label: 'Settings…', click: showSetup }, { type: 'separator' }, updateMenuItem(),
+    { type: 'separator' }, { label: `Quit ${PRODUCT_NAME}`, click: () => app.quit() },
+  ])));
   app.setAboutPanelOptions({ applicationName: PRODUCT_NAME, applicationVersion: PRODUCT_VERSION,
     copyright: '© 2026 qqdict contributors', credits: 'Push-to-talk dictation for macOS.',
-    iconPath: path.join(__dirname, '..', 'assets', 'app-icon.png'), website: PRODUCT_REPOSITORY });
+    iconPath: path.join(__dirname, '..', 'assets', app.isPackaged ? 'app-icon.png' : BUILD_IDENTITY.iconSource), website: PRODUCT_REPOSITORY });
   Menu.setApplicationMenu(Menu.buildFromTemplate([
     { label: PRODUCT_NAME, submenu: [{ role: 'about', label: `About ${PRODUCT_NAME}` },
+      updateMenuItem(),
       { type: 'separator' }, { label: 'Settings…', accelerator: 'CommandOrControl+,', click: showSetup },
       { type: 'separator' }, { role: 'services' }, { type: 'separator' }, { role: 'hide', label: `Hide ${PRODUCT_NAME}` },
       { role: 'hideOthers' }, { role: 'unhide' }, { type: 'separator' }, { role: 'quit', label: `Quit ${PRODUCT_NAME}` }] },
     { role: 'editMenu' }, { role: 'windowMenu' },
     { role: 'help', submenu: [{ label: 'qqdict on GitHub', click: () => { void shell.openExternal(PRODUCT_REPOSITORY); } },
-      { label: 'Download updates…', click: () => { void shell.openExternal(`${PRODUCT_REPOSITORY}/releases`); } }] },
+      { label: 'Release notes and downloads…', click: () => { void shell.openExternal(`${PRODUCT_REPOSITORY}/releases`); } }] },
   ]));
+  updates!.start();
   if (!app.getLoginItemSettings().wasOpenedAtLogin || Object.values(state.permissions).some((permission) => permission !== 'granted') || !state.connected) showSetup();
   setInterval(() => { if (take && !take.stopRequested) { state.elapsedSeconds = Math.min(300, Math.floor((Date.now() - take.startedAt) / 1000)); if (state.elapsedSeconds >= 300) end(); publish(); } }, 250).unref();
-  powerMonitor.on('suspend', cancel); powerMonitor.on('lock-screen', cancel);
-  powerMonitor.on('resume', () => { void refreshPermissions(); });
+  powerMonitor.on('suspend', () => { suspended = true; cancel(); });
+  powerMonitor.on('lock-screen', () => { screenLocked = true; cancel(); });
+  powerMonitor.on('unlock-screen', () => { screenLocked = false; updates?.activityChanged(); });
+  powerMonitor.on('resume', () => { suspended = false; void refreshPermissions(); updates?.check(); updates?.activityChanged(); });
 }
 
 function bindIPC(): void {
@@ -391,11 +453,18 @@ function bindIPC(): void {
   });
   handle('ready', (event) => { if (event.sender === recorder?.webContents) recorderReady = true; publish(); });
   handle('settings', async (_event, settings: Partial<Settings>) => {
+    if (updates?.restartPending) throw new Error('qqdict is preparing to restart. Change settings after the update.');
     if (take) throw new Error('Finish the current dictation before changing settings.');
-    await store.updateSettings(settings); Object.assign(state, store.settings);
-    await bridge.setHotkey(state.hotkey);
-    if ('launchAtLogin' in settings && app.isPackaged) app.setLoginItemSettings({ openAtLogin: state.launchAtLogin });
-    publish(); return snapshot();
+    pendingSettings++;
+    try {
+      await store.updateSettings(settings); Object.assign(state, store.settings);
+      await bridge.setHotkey(state.hotkey);
+      if ('launchAtLogin' in settings && app.isPackaged) app.setLoginItemSettings({ openAtLogin: state.launchAtLogin });
+      publish(); return snapshot();
+    } finally {
+      pendingSettings--;
+      updates?.activityChanged();
+    }
   });
   handle('permission', async (_event, kind: keyof AppState['permissions']) => {
     if (kind === 'microphone') await systemPreferences.askForMediaAccess('microphone');
@@ -435,6 +504,11 @@ function bindIPC(): void {
   ipcMain.on('dictation:overlay-drag-start', event => { if (event.sender === overlay?.webContents) startOverlayDrag(); });
   ipcMain.on('dictation:overlay-drag-move', event => { if (event.sender === overlay?.webContents) moveOverlayDrag(); });
   ipcMain.on('dictation:overlay-drag-end', event => { if (event.sender === overlay?.webContents) endOverlayDrag(); });
+  ipcMain.on('dictation:capturing', (event, id: number, microphoneName: unknown) => {
+    if (event.sender !== recorder?.webContents || take?.id !== id || take.stopRequested || take.finishing) return;
+    state.microphoneName = typeof microphoneName === 'string' ? microphoneName.trim().slice(0, 120) : '';
+    state.phase = 'recording'; state.detail = 'Listening'; publish();
+  });
   ipcMain.on('dictation:audio', (event, audio: unknown, id: number) => { if (event.sender === recorder?.webContents && take?.id === id && audio instanceof ArrayBuffer) transport.append(audio); });
   ipcMain.on('dictation:level', (event, level: number) => { if (event.sender === recorder?.webContents && take && Number.isFinite(level)) { state.level = Math.max(0, Math.min(1, level)); publish(); } });
   ipcMain.on('dictation:recorder-error', (event, message: string, id: number) => { if (event.sender === recorder?.webContents && take?.id === id && typeof message === 'string') fail(safeMessage(message)); });
@@ -446,8 +520,12 @@ else {
   app.on('activate', showSetup);
   app.whenReady().then(initialize).catch((error) => { console.error('qqdict could not start:', safeMessage(error)); app.quit(); });
 }
+// quitAndInstall closes windows before Electron emits app.before-quit. Mark
+// quitting early so the Settings close handler cannot veto the update.
+autoUpdater.on('before-quit-for-update', () => { quitting = true; });
 app.on('before-quit', () => {
   quitting = true;
+  updates?.dispose();
   take?.abort.abort(); take = null;
   transport.cancel(); harness.dispose(); bridge?.dispose();
   tray?.destroy(); tray = null;

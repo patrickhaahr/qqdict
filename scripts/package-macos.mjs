@@ -2,14 +2,14 @@ import { access, chmod, cp, mkdir, open, readFile, readdir, rename, rm, writeFil
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { developerSigned, notarizationArguments, notarize, run, sign } from './macos-signing.mjs';
+import { buildIdentity } from './build-channel.mjs';
 
 // Package the already-built application. The pnpm package:mac command builds first.
 // Keep this dependency-free so the local prototype needs no packaging service.
 const project = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const productName = 'qqdict';
-const bundleId = 'io.github.qwertyu-alex.qqdict';
+const { channel, productName, bundleId, slug, iconName, iconSource } = buildIdentity();
 const release = join(project, 'release');
-const staging = join(release, '.qqdict-build');
+const staging = join(release, `.${slug}-build`);
 const bundle = join(staging, `${productName}.app`);
 const destination = join(release, `${productName}.app`);
 const electronBundle = join(project, 'node_modules/electron/dist/Electron.app');
@@ -18,9 +18,13 @@ const packageInfo = JSON.parse(await readFile(join(project, 'package.json'), 'ut
 const wsInfo = JSON.parse(await readFile(join(project, 'node_modules/ws/package.json'), 'utf8'));
 const arch = process.env.QQDICT_ARCH || process.arch;
 const entitlements = join(project, 'native/entitlements.plist');
-const appIcon = join(project, 'assets/AppIcon.icns');
-const rendererIcon = join(project, 'assets/app-icon.png');
+const appIcon = join(project, 'assets', `${iconName}.icns`);
+const rendererIcon = join(project, 'assets', iconSource);
 const requestedNotarization = notarizationArguments();
+const builtIdentity = JSON.parse(await readFile(join(project, 'dist/build-identity.json'), 'utf8'));
+if (builtIdentity.channel !== channel || builtIdentity.bundleId !== bundleId) {
+  throw new Error(`Rebuild the app with QQDICT_CHANNEL=${channel} before packaging.`);
+}
 if (!['arm64', 'x64'].includes(arch)) throw new Error('QQDICT_ARCH must be arm64 or x64.');
 if (requestedNotarization && !developerSigned) {
   throw new Error('Apple notarization credentials require DEVELOPER_ID_APPLICATION to be configured too.');
@@ -92,7 +96,7 @@ try {
   await cp(join(project, 'node_modules/ws'), join(appResources, 'node_modules/ws'), { recursive: true, dereference: true });
   await mkdir(join(appResources, 'assets'), { recursive: true });
   await cp(rendererIcon, join(appResources, 'assets/app-icon.png'));
-  await cp(appIcon, join(resources, 'AppIcon.icns'));
+  await cp(appIcon, join(resources, `${iconName}.icns`));
   await mkdir(join(resources, 'licenses'), { recursive: true });
   for (const name of ['LICENSE', 'LICENSES.chromium.html']) {
     await cp(join(project, 'node_modules/electron/dist', name), join(resources, 'licenses', name));
@@ -106,6 +110,12 @@ try {
   await mkdir(join(resources, 'native'), { recursive: true });
   await cp(nativeBridge, join(resources, 'native/DictationBridge'));
   await chmod(join(resources, 'native/DictationBridge'), 0o755);
+  // This file is covered by the bundle signature. A requested notarization
+  // must succeed before the staged app can become a release artifact.
+  await writeFile(join(resources, 'update-config.json'), `${JSON.stringify({
+    enabled: channel === 'production' && developerSigned && !!requestedNotarization,
+    version: packageInfo.version, bundleId, arch,
+  }, null, 2)}\n`);
   await rm(join(resources, 'default_app.asar'), { force: true });
 
   await rename(join(contents, 'MacOS/Electron'), join(contents, `MacOS/${productName}`));
@@ -115,10 +125,10 @@ try {
     ['CFBundleDisplayName', 'string', productName], ['CFBundleIdentifier', 'string', bundleId],
     ['CFBundleVersion', 'string', packageInfo.version], ['CFBundleShortVersionString', 'string', packageInfo.version],
     ['LSApplicationCategoryType', 'string', 'public.app-category.utilities'], ['LSUIElement', 'bool', 'true'],
-    ['CFBundleIconFile', 'string', 'AppIcon'], ['LSMinimumSystemVersion', 'string', '13.0'],
-    ['NSMicrophoneUsageDescription', 'string', 'qqdict records your microphone while you hold the dictation hotkey.'],
-    ['NSInputMonitoringUsageDescription', 'string', 'qqdict watches the selected modifier key to start and stop dictation.'],
-    ['NSAccessibilityUsageDescription', 'string', 'qqdict pastes your completed transcript into the field you were using.'],
+    ['CFBundleIconFile', 'string', iconName], ['LSMinimumSystemVersion', 'string', '13.0'],
+    ['NSMicrophoneUsageDescription', 'string', `${productName} records your microphone while you hold the dictation hotkey.`],
+    ['NSInputMonitoringUsageDescription', 'string', `${productName} watches the selected modifier key to start and stop dictation.`],
+    ['NSAccessibilityUsageDescription', 'string', `${productName} pastes your completed transcript into the field you were using.`],
   ]) plistSet(mainPlist, key, type, value);
   for (const key of ['ElectronAsarIntegrity', 'NSCameraUsageDescription', 'NSBluetoothPeripheralUsageDescription',
     'NSBluetoothAlwaysUsageDescription', 'NSAudioCaptureUsageDescription', 'NSAppTransportSecurity']) {
@@ -140,7 +150,7 @@ try {
       ['CFBundleExecutable', helperName], ['CFBundleName', helperName], ['CFBundleDisplayName', helperName],
       ['CFBundleIdentifier', `${bundleId}.${idSuffix}`], ['CFBundleVersion', packageInfo.version],
       ['CFBundleShortVersionString', packageInfo.version],
-      ['NSMicrophoneUsageDescription', 'qqdict records your microphone while you hold the dictation hotkey.'],
+      ['NSMicrophoneUsageDescription', `${productName} records your microphone while you hold the dictation hotkey.`],
     ]) plistSet(helperPlist, key, 'string', value);
     helperBundles.push(helperBundle);
   }
@@ -179,8 +189,8 @@ try {
     try { await rename(previous, destination); } catch {}
     throw error;
   }
-  await writeFile(join(release, `build-info-${arch}.json`), `${JSON.stringify({
-    productName, version: packageInfo.version, bundleId, arch, minimumMacOS: '13.0',
+  await writeFile(join(release, `build-info-${channel}-${arch}.json`), `${JSON.stringify({
+    channel, productName, version: packageInfo.version, bundleId, arch, minimumMacOS: '13.0',
     signing: developerSigned ? 'developer-id' : 'ad-hoc', notarized,
   }, null, 2)}\n`);
   console.log(`Packaged ${productName} ${packageInfo.version} (${arch}): ${destination}`);

@@ -14,7 +14,11 @@ async function pasteOnce(bridge: MacBridge, text: string, target: FocusTarget, s
   signal?.throwIfAborted();
   if (target.secure) throw new Error('The target is a protected field. Copy the transcript from the menu bar if needed.');
   if (!target.targetPid || !target.focusId) throw new Error('Automatic paste needs Accessibility access and a focused text field. Your transcript is saved.');
-  const staged = await bridge.request<{ changeCount: number; restoreAvailable: boolean }>('stageClipboard', { text });
+  const insertion = text.trim();
+  if (!insertion) return;
+  const staged = await bridge.request<{ changeCount: number; restoreAvailable: boolean }>('stageClipboard', {
+    text: insertion + ' ', targetPid: target.targetPid, focusId: target.focusId,
+  });
   try {
     await delay(70, undefined, { signal });
     signal?.throwIfAborted();

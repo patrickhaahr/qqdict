@@ -1,9 +1,10 @@
 # qqdict macOS bridge
 
 This small Swift process reads only configured modifier flags. It communicates with
-Electron using newline-delimited JSON on stdin/stdout. It reads no field text,
-keystroke text, or audio. Clipboard data is retained privately only during an
-explicit staging command, and is never serialized or logged.
+Electron using newline-delimited JSON on stdin/stdout. It reads no keystroke text
+or audio. During an insertion staging command, it may read up to 64 UTF-16 units
+on either side of the selection to adjust spacing. Cursor context and clipboard
+data stay private to the helper, and are never serialized or logged.
 
 Build with `zsh native/build.sh`. Test the hotkey state reducer without sending
 events using `native/build/DictationBridge --self-test`.
@@ -22,10 +23,10 @@ Commands have an arbitrary `id` plus `command`. Every command returns
 | `status` | — | Current permissions and event tap state |
 | `captureFocus` | — | `targetPid`, `targetApp`, `targetBundleId`, `secure`, `fieldAvailable`, optional `focusId` and `role` |
 | `clipboardVersion` | — | Pasteboard `changeCount`; reads no clipboard data |
-| `stageClipboard` | `text` | Privately snapshots clipboard types up to 16 MB, writes transcript, returns `changeCount`, `restoreAvailable` |
+| `stageClipboard` | `text`, optional `targetPid` and `focusId` | Privately snapshots clipboard types up to 16 MB, prepares insertion spacing when a target is supplied, writes transcript, returns `changeCount`, `restoreAvailable` |
 | `restoreClipboard` | `changeCount` | Restores the snapshot only if the version still matches, returns `restored` |
 | `setHotkey` | `hotkey`: `fn`, `right-option`, or `ctrl-option` | Changes the hold gesture, releasing any current gesture first |
-| `paste` | `targetPid`, `focusId` | Checks original app and AX focus, then posts Cmd+V |
+| `paste` | `targetPid`, `focusId`, `changeCount` | Checks original app, AX focus, prepared selection/context, and clipboard version, then posts Cmd+V |
 | `discardFocus` | `focusId` | Removes an unused captured element |
 | `requestInputMonitoring` | — | Calls Apple's permission request; never changes settings |
 | `requestAccessibility` | — | Calls Apple's permission request; never changes settings |
@@ -41,6 +42,15 @@ acknowledgement that the target application consumed it.
 Automatic paste accepts standard text field, text area, and combo box roles, plus
 custom editors that expose a settable text selection range. Other controls fall
 back to saved history and Copy.
+
+Automatic insertion adds a trailing space. Where AX cursor context is available,
+it adds a missing word separator, replaces adjacent spaces with a single trailing
+space, and removes preceding spaces when inserting punctuation. Existing line
+breaks and tabs are preserved. It may expand the selected range over adjacent
+spaces before Cmd+V, but never changes the entire field value. If context or a
+settable selection is unavailable, spacing falls back to what the editor supports.
+The cursor range and available context are checked again before pasting; a change
+aborts insertion. History and manual Copy retain the original transcript.
 
 Automatic paste refuses secure fields, changed focus, expired captures (ten
 minutes), missing Accessibility access, or a modifier still held. It never

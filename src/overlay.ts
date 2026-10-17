@@ -2,6 +2,7 @@ import type { AppState } from './contracts';
 
 const pill = document.getElementById('dictation-pill')!;
 const label = document.getElementById('pill-label')!;
+const microphone = document.getElementById('pill-microphone')!;
 const time = document.getElementById('pill-time')!;
 const copy = document.getElementById('pill-copy') as HTMLButtonElement;
 const wave = document.getElementById('wave')!;
@@ -52,7 +53,11 @@ function render(state: AppState): void {
   label.textContent = text;
   const description = feedback === 'failed' ? 'Try copying again.' : state.detail;
   pill.title = description;
-  label.setAttribute('aria-label', description && description !== text ? `${text}. ${description}` : text);
+  // Name the input only while it is open; the recorder reports what macOS actually opened.
+  const microphoneName = state.phase === 'recording' ? state.microphoneName : '';
+  microphone.hidden = !microphoneName;
+  microphone.textContent = microphoneName;
+  label.setAttribute('aria-label', microphoneName ? `${text} on ${microphoneName}` : description && description !== text ? `${text}. ${description}` : text);
   const seconds = Math.max(0, Math.floor(state.elapsedSeconds));
   time.textContent = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
   time.setAttribute('aria-label', `Recording duration: ${seconds} seconds`);

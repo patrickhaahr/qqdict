@@ -1,4 +1,6 @@
 import type { AppEvent, AppState, DictationAPI, Hotkey } from './contracts';
+import { playRecordingCue } from './recording-cues';
+import { PRODUCT_NAME } from './product';
 
 declare global { interface Window { dictation: DictationAPI } }
 
@@ -15,8 +17,13 @@ const errorText = (error: unknown): string => {
   const text = error instanceof Error ? error.message : String(error);
   if (/NotAllowedError|Permission denied|denied permission/i.test(text)) return 'Allow Microphone access in System Settings → Privacy & Security, then try again.';
   if (/NotFoundError|Requested device not found/i.test(text)) return 'The selected microphone is unavailable. Choose another audio input.';
-  return text || 'qqdict could not finish. Please try again.';
+  return text || `${PRODUCT_NAME} could not finish. Please try again.`;
 };
+// Chromium labels the system input "Default - …" and appends a transport or USB ID suffix.
+const microphoneName = (label: string): string => label
+  .replace(/^(?:Default|Communications) - /, '')
+  .replace(/ \((?:Built-in|Bluetooth|Virtual|Aggregate|[0-9a-f]{4}:[0-9a-f]{4})\)$/i, '')
+  .trim();
 
 const workletSource = `
 class DictationCapture extends AudioWorkletProcessor {
@@ -115,6 +122,46 @@ class DictationCapture extends AudioWorkletProcessor {
 }
 registerProcessor('dictation-capture', DictationCapture);
 `;
+type PreparedAudio = { context: AudioContext; processor: AudioWorkletNode; silentOutput: GainNode };
+let idleAudio: Promise<PreparedAudio> | undefined;
+let recorderClosing = false;
+
+async function createPreparedAudio(): Promise<PreparedAudio> {
+  const context = new AudioContext({ latencyHint: 'interactive' });
+  try {
+    await context.resume();
+    const moduleUrl = URL.createObjectURL(new Blob([workletSource], { type: 'text/javascript' }));
+    try { await context.audioWorklet.addModule(moduleUrl); }
+    finally { URL.revokeObjectURL(moduleUrl); }
+    const processor = new AudioWorkletNode(context, 'dictation-capture', { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1] });
+    const silentOutput = context.createGain();
+    silentOutput.gain.value = 0;
+    processor.connect(silentOutput).connect(context.destination);
+    // Build the graph and resampling filters ahead of the shortcut, with no mic.
+    await context.suspend();
+    return { context, processor, silentOutput };
+  } catch (error) {
+    await context.close().catch(() => undefined);
+    throw error;
+  }
+}
+
+function warmAudio(): Promise<PreparedAudio> {
+  if (!idleAudio) {
+    const pending = createPreparedAudio();
+    idleAudio = pending;
+    // Warming is best effort; a failed idle context is retried on the next take.
+    void pending.catch(() => { if (idleAudio === pending) idleAudio = undefined; });
+  }
+  return idleAudio;
+}
+
+async function closePreparedAudio(audio: PreparedAudio): Promise<void> {
+  audio.processor.disconnect();
+  audio.silentOutput.disconnect();
+  if (audio.context.state !== 'closed') await audio.context.close().catch(() => undefined);
+}
+
 type Take = {
   id: number;
   cancelled: boolean;
@@ -123,6 +170,7 @@ type Take = {
   queue: ArrayBuffer[];
   queuedBytes: number;
   audioBytes: number;
+  captureStarted: boolean;
   context?: AudioContext;
   stream?: MediaStream;
   source?: MediaStreamAudioSourceNode;
@@ -151,6 +199,10 @@ function stopMicrophone(take: Take): void {
   take.stream = undefined;
   take.source?.disconnect();
   take.source = undefined;
+  if (take.captureStarted) {
+    take.captureStarted = false;
+    if (!recorderClosing) void playRecordingCue('stop');
+  }
   api.reportLevel(0);
 }
 
@@ -165,6 +217,7 @@ async function releaseAudio(take: Take): Promise<void> {
   const context = take.context;
   take.context = undefined;
   if (context && context.state !== 'closed') await context.close().catch(() => undefined);
+  if (!recorderClosing) void warmAudio();
 }
 
 async function cancelTake(take: Take): Promise<void> {
@@ -183,6 +236,7 @@ async function failTake(take: Take, error: unknown): Promise<void> {
 }
 
 async function prepareAudio(take: Take): Promise<void> {
+  const prepared = warmAudio();
   const audio = {
     channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true,
     ...(state?.microphoneId ? { deviceId: { exact: state.microphoneId } } : {}),
@@ -198,37 +252,41 @@ async function prepareAudio(take: Take): Promise<void> {
   audioTrack.addEventListener('ended', () => {
     if (!take.stopRequested && !take.cancelled) void failTake(take, new Error('The microphone disconnected. Choose an available audio input and try again.'));
   });
-  const context = new AudioContext({ latencyHint: 'interactive' });
+  if (idleAudio === prepared) idleAudio = undefined;
+  const pipeline = await prepared;
+  if (take.cancelled || take.stopRequested || current !== take) {
+    await closePreparedAudio(pipeline);
+    if (!recorderClosing) void warmAudio();
+    return;
+  }
+  const { context, processor, silentOutput } = pipeline;
   take.context = context;
-  await context.resume();
-  if (take.cancelled || take.stopRequested) return;
-  const moduleUrl = URL.createObjectURL(new Blob([workletSource], { type: 'text/javascript' }));
-  try { await context.audioWorklet.addModule(moduleUrl); }
-  finally { URL.revokeObjectURL(moduleUrl); }
-  if (take.cancelled || take.stopRequested || current !== take) return;
-  if (audioTrack.readyState === 'ended') throw new Error('The microphone disconnected before recording started. Choose an available audio input and try again.');
-  const processor = new AudioWorkletNode(context, 'dictation-capture', { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1] });
   take.processor = processor;
+  take.silentOutput = silentOutput;
+  if (audioTrack.readyState === 'ended') throw new Error('The microphone disconnected before recording started. Choose an available audio input and try again.');
   processor.port.onmessage = (event: MessageEvent<{ type: string; pcm?: ArrayBuffer; value?: number }>) => {
     if (take.cancelled || current !== take) return;
     if (event.data.type === 'audio' && event.data.pcm) sendChunk(take, event.data.pcm);
     else if (event.data.type === 'level' && !take.stopRequested) api.reportLevel(event.data.value ?? 0);
     else if (event.data.type === 'flushed') { take.flushResolve?.(); take.flushResolve = undefined; }
   };
-  take.silentOutput = context.createGain();
-  take.silentOutput.gain.value = 0;
   take.source = context.createMediaStreamSource(stream);
   take.source.connect(processor);
-  processor.connect(take.silentOutput).connect(context.destination);
-  // Capture starts before the network handshake so the first words are retained.
+  // Finish the cue before accepting samples, so it is not transcribed.
+  await playRecordingCue('start');
+  if (take.cancelled || take.stopRequested || current !== take) return;
+  // Capture and buffer locally while the network handshake is still in flight.
   processor.port.postMessage({ type: 'start' });
+  take.captureStarted = true;
+  await context.resume();
+  if (!take.cancelled && !take.stopRequested && current === take) api.reportCapturing(take.id, microphoneName(audioTrack.label));
 }
 
 function startTake(id: number): void {
   if (current?.id === id || (current && !current.cancelled && !current.stopRequested)) return;
   const take: Take = {
     id, cancelled: false, stopRequested: false, backendReady: false,
-    queue: [], queuedBytes: 0, audioBytes: 0,
+    queue: [], queuedBytes: 0, audioBytes: 0, captureStarted: false,
     connected: Promise.resolve(), prepared: Promise.resolve(),
   };
   current = take;
@@ -253,7 +311,7 @@ async function stopTake(take: Take): Promise<void> {
   take.closing = (async () => {
     await take.prepared;
     if (take.cancelled || current !== take) return;
-    if (take.processor) {
+    if (take.processor && take.context?.state === 'running') {
       await new Promise<void>((resolve, reject) => {
         const timeout = setTimeout(() => { take.flushResolve = undefined; reject(new Error('The microphone did not finish its audio stream. Try again.')); }, 2000);
         take.flushResolve = () => { clearTimeout(timeout); resolve(); };
@@ -274,7 +332,7 @@ async function stopTake(take: Take): Promise<void> {
 
 async function runRecorder(): Promise<void> {
   document.body.classList.add('recorder');
-  document.title = 'qqdict microphone';
+  document.title = `${PRODUCT_NAME} microphone`;
   api.onEvent((event: AppEvent) => {
     if (event.type === 'state') { state = event.state; return; }
     if (event.type === 'command') {
@@ -291,8 +349,14 @@ async function runRecorder(): Promise<void> {
     }
   });
   state = await api.getState();
+  void warmAudio();
   await api.ready();
-  window.addEventListener('beforeunload', () => { if (current) { current.cancelled = true; void releaseAudio(current); } });
+  window.addEventListener('beforeunload', () => {
+    recorderClosing = true;
+    if (current) { current.cancelled = true; void releaseAudio(current); }
+    void idleAudio?.then(closePreparedAudio).catch(() => undefined);
+    idleAudio = undefined;
+  });
 }
 
 function runSettings(): void {
@@ -429,7 +493,7 @@ function runSettings(): void {
     ];
     const completed = Number(next.connected) + steps.filter(([kind]) => next.permissions[kind] === 'granted').length;
     const ready = completed === 4;
-    element('setup-title').textContent = ready ? 'You’re ready' : 'Set up qqdict';
+    element('setup-title').textContent = ready ? 'You’re ready' : `Set up ${PRODUCT_NAME}`;
     element('setup-description').textContent = ready ? `Hold ${hotkeyLabel(next.hotkey)} in any app to dictate.` : 'Connect your Codex account and allow access on this Mac.';
     element('setup-count').textContent = checkingConnection ? 'Checking access…' : `${completed} of 4 ready`;
     element<HTMLProgressElement>('setup-progress').value = completed;
@@ -461,8 +525,8 @@ function runSettings(): void {
       button.disabled = pending;
       button.setAttribute('aria-busy', String(pending));
       button.textContent = pending ? 'Opening…' : unavailable ? 'Check again' : permission === 'denied' ? 'Open Settings' : 'Allow';
-      button.setAttribute('aria-label', pending ? `Checking ${label}` : unavailable ? `Check ${label} again` : permission === 'denied' ? `Open Settings for ${label}` : `Allow qqdict to use ${label}`);
-      element(`${prefix}-setup-detail`).textContent = unavailable ? 'Reopen qqdict or check again.' : permission === 'denied' ? `Enable qqdict in Privacy & Security → ${label}.` : description;
+      button.setAttribute('aria-label', pending ? `Checking ${label}` : unavailable ? `Check ${label} again` : permission === 'denied' ? `Open Settings for ${label}` : `Allow ${PRODUCT_NAME} to use ${label}`);
+      element(`${prefix}-setup-detail`).textContent = unavailable ? `Reopen ${PRODUCT_NAME} or check again.` : permission === 'denied' ? `Enable ${PRODUCT_NAME} in Privacy & Security → ${label}.` : description;
       if (!nextStep && !granted) nextStep = row;
     }
     [accountStep, ...steps.map(([, prefix]) => element(`${prefix}-step`))].forEach((row) => row.classList.toggle('is-next', row === nextStep));
@@ -604,7 +668,7 @@ if (api) {
   if (isRecorder) void runRecorder().catch((error) => console.error(errorText(error)));
   else runSettings();
 } else {
-  element('error-message').textContent = 'Open qqdict on your Mac to connect to your Codex account.';
+  element('error-message').textContent = `Open ${PRODUCT_NAME} on your Mac to connect to your Codex account.`;
   element('error-panel').hidden = false;
 }
 

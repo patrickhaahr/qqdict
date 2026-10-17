@@ -19,6 +19,7 @@ const api: DictationAPI = {
   showSettings: () => invoke('show-settings'),
   quit: () => invoke('quit'),
   ready: () => invoke('ready'),
+  reportCapturing: (takeId, microphoneName) => ipcRenderer.send('dictation:capturing', takeId, microphoneName),
   reportLevel: (level) => ipcRenderer.send('dictation:level', level),
   reportError: (message, takeId) => ipcRenderer.send('dictation:recorder-error', message, takeId),
   start: (takeId) => invoke('start', takeId),

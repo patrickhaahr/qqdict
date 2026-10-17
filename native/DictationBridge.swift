@@ -3,9 +3,9 @@ import ApplicationServices
 import CoreGraphics
 import Foundation
 
-// This process observes only modifier changes. It never reads keyboard text or
-// another application's field contents. Clipboard snapshots are private and are
-// read only on an explicit staging command, never serialized or logged.
+// This process observes modifier changes, never keyboard text. During insertion
+// it reads a bounded cursor context for spacing. Context and clipboard snapshots
+// stay private to this process and are never serialized or logged.
 final class JSONOutput {
     private let lock = NSLock()
 
@@ -58,6 +58,48 @@ private struct FocusSnapshot {
     let pid: pid_t
     let element: AXUIElement
     let capturedAt: Date
+    var insertion: InsertionPlan?
+    var insertionClipboardVersion: Int?
+}
+
+private func sameRange(_ lhs: CFRange, _ rhs: CFRange) -> Bool {
+    lhs.location == rhs.location && lhs.length == rhs.length
+}
+
+private struct InsertionPlan {
+    let text: String
+    let selection: CFRange
+    let replacement: CFRange
+    // Retain only the small adjacent strings until paste validation completes.
+    let before: String?
+    let after: String?
+
+    init(text: String, selection: CFRange, before: String?, after: String?, canReplaceSpaces: Bool) {
+        let words = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        var start = selection.location
+        var end = selection.location + selection.length
+        var prefix = ""
+        var suffix = " "
+        let punctuation = words.first.map { ".,!?;:…)]}»”’".contains($0) } ?? false
+        if punctuation && canReplaceSpaces, let before = before {
+            start -= before.utf16.reversed().prefix(while: { $0 == 32 }).count
+        } else if !punctuation, let previous = before?.last,
+                  !previous.isWhitespace, !"([{«“‘".contains(previous) {
+            prefix = " "
+        }
+        if let after = after, let next = after.first {
+            if next == " " && canReplaceSpaces {
+                end += after.utf16.prefix(while: { $0 == 32 }).count
+            } else if next.isWhitespace || ".,!?;:…)]}»”’".contains(next) {
+                suffix = ""
+            }
+        }
+        self.text = words.isEmpty ? "" : prefix + words + suffix
+        self.selection = selection
+        self.replacement = CFRange(location: start, length: end - start)
+        self.before = before
+        self.after = after
+    }
 }
 
 final class ClipboardSession {
@@ -332,6 +374,57 @@ final class DictationBridge {
         return AXUIElementIsAttributeSettable(element, kAXSelectedTextRangeAttribute as CFString, &settable) == .success && settable.boolValue
     }
 
+    private func selectedRange(_ element: AXUIElement) -> CFRange? {
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, kAXSelectedTextRangeAttribute as CFString, &value) == .success,
+              let value = value, CFGetTypeID(value) == AXValueGetTypeID() else { return nil }
+        var range = CFRange()
+        guard AXValueGetValue(value as! AXValue, .cfRange, &range),
+              range.location >= 0, range.length >= 0,
+              range.location <= Int.max - range.length - 64 else { return nil }
+        return range
+    }
+
+    private func setSelectedRange(_ element: AXUIElement, _ range: CFRange) -> Bool {
+        var range = range
+        guard let value = AXValueCreate(.cfRange, &range) else { return false }
+        return AXUIElementSetAttributeValue(element, kAXSelectedTextRangeAttribute as CFString, value) == .success
+    }
+
+    private func textInRange(_ element: AXUIElement, _ range: CFRange) -> String? {
+        if range.length == 0 { return "" }
+        var range = range
+        guard let value = AXValueCreate(.cfRange, &range) else { return nil }
+        var result: CFTypeRef?
+        guard AXUIElementCopyParameterizedAttributeValue(element, kAXStringForRangeParameterizedAttribute as CFString, value, &result) == .success,
+              let text = result as? String, text.utf16.count == range.length else { return nil }
+        return text
+    }
+
+    private func cursorContext(_ element: AXUIElement, _ range: CFRange) -> (before: String?, after: String?) {
+        // Read at most 64 UTF-16 units on either side, never the field's value.
+        let beforeLength = min(range.location, 64)
+        let before = textInRange(element, CFRange(location: range.location - beforeLength, length: beforeLength))
+        let end = range.location + range.length
+        var countValue: CFTypeRef?
+        var afterLength = 1
+        if AXUIElementCopyAttributeValue(element, kAXNumberOfCharactersAttribute as CFString, &countValue) == .success,
+           let count = countValue as? NSNumber, count.intValue >= end {
+            afterLength = min(count.intValue - end, 64)
+        }
+        let after = textInRange(element, CFRange(location: end, length: afterLength))
+        return (before, after)
+    }
+
+    private func focusError(_ snapshot: FocusSnapshot) -> BridgeError? {
+        guard Date().timeIntervalSince(snapshot.capturedAt) < focusLifetime else { return .focusExpired }
+        guard let app = NSWorkspace.shared.frontmostApplication, app.processIdentifier == snapshot.pid,
+              let element = focusedElement(pid: snapshot.pid), CFEqual(element, snapshot.element) else { return .focusChanged }
+        if isSecure(element) { return .secureField }
+        if !acceptsTextInsertion(element) { return .noFocusedField }
+        return nil
+    }
+
     private func captureFocus() -> [String: Any] {
         guard let app = NSWorkspace.shared.frontmostApplication else {
             return ["ok": false, "error": BridgeError.noFocusedApp.rawValue]
@@ -389,13 +482,18 @@ final class DictationBridge {
         guard Date().timeIntervalSince(snapshot.capturedAt) < focusLifetime else {
             completion(["ok": false, "error": BridgeError.focusExpired.rawValue]); return
         }
+        var expectedSelection = snapshot.insertion?.selection
         func validate() -> BridgeError? {
-            guard let app = NSWorkspace.shared.frontmostApplication, app.processIdentifier == snapshot.pid,
-                  let element = focusedElement(pid: snapshot.pid), CFEqual(element, snapshot.element) else {
-                return .focusChanged
+            if let error = focusError(snapshot) { return error }
+            if snapshot.insertion != nil && snapshot.insertionClipboardVersion != clipboardVersion { return .clipboardChanged }
+            if let expected = expectedSelection {
+                guard let current = selectedRange(snapshot.element), sameRange(current, expected) else { return .focusChanged }
             }
-            if isSecure(element) { return .secureField }
-            if !acceptsTextInsertion(element) { return .noFocusedField }
+            if let plan = snapshot.insertion {
+                let context = cursorContext(snapshot.element, plan.selection)
+                if let before = plan.before, context.before != before { return .focusChanged }
+                if let after = plan.after, context.after != after { return .focusChanged }
+            }
             let flags = CGEventSource.flagsState(.hidSystemState)
             if flags.intersection([.maskSecondaryFn, .maskCommand, .maskControl, .maskAlternate, .maskShift]).rawValue != 0 {
                 return .modifierHeld
@@ -415,9 +513,23 @@ final class DictationBridge {
         }
         down.flags = .maskCommand
         up.flags = .maskCommand
+        var adjustedSelection = false
+        if let plan = snapshot.insertion, !sameRange(plan.selection, plan.replacement) {
+            // Only expand the current selection over adjacent spaces. Cmd+V
+            // performs the edit so the target application's undo still works.
+            guard setSelectedRange(snapshot.element, plan.replacement) else {
+                completion(["ok": false, "error": BridgeError.noFocusedField.rawValue]); return
+            }
+            expectedSelection = plan.replacement
+            adjustedSelection = true
+        }
         // Recheck immediately before posting. Never activate another application,
         // replace an entire AX value, or send Return/Enter.
         if let error = validate() {
+            if adjustedSelection, let plan = snapshot.insertion, focusError(snapshot) == nil,
+               let current = selectedRange(snapshot.element), sameRange(current, plan.replacement) {
+                _ = setSelectedRange(snapshot.element, plan.selection)
+            }
             completion(["ok": false, "error": error.rawValue]); return
         }
         down.post(tap: .cghidEventTap)
@@ -451,7 +563,38 @@ final class DictationBridge {
             guard let text = command["text"] as? String, text.utf8.count <= 1_048_576 else {
                 respond(["ok": false, "error": "invalid_clipboard_text"]); return
             }
-            respond(clipboardSession.stage(text: text))
+            var insertionText = text
+            var prepared: (String, FocusSnapshot)?
+            if command["focusId"] != nil || command["targetPid"] != nil {
+                guard AXIsProcessTrusted() else {
+                    respond(["ok": false, "error": BridgeError.accessibilityRequired.rawValue]); return
+                }
+                guard let focusID = command["focusId"] as? String,
+                      var snapshot = focusSnapshots[focusID],
+                      let pid = command["targetPid"] as? Int, pid == Int(snapshot.pid) else {
+                    respond(["ok": false, "error": BridgeError.focusRequired.rawValue]); return
+                }
+                if let error = focusError(snapshot) {
+                    respond(["ok": false, "error": error.rawValue]); return
+                }
+                snapshot.insertion = nil
+                if let range = selectedRange(snapshot.element) {
+                    let context = cursorContext(snapshot.element, range)
+                    var settable: DarwinBoolean = false
+                    let canReplace = AXUIElementIsAttributeSettable(snapshot.element, kAXSelectedTextRangeAttribute as CFString, &settable) == .success && settable.boolValue
+                    let plan = InsertionPlan(text: text, selection: range, before: context.before, after: context.after, canReplaceSpaces: canReplace)
+                    snapshot.insertion = plan
+                    insertionText = plan.text
+                }
+                prepared = (focusID, snapshot)
+            }
+            let staged = clipboardSession.stage(text: insertionText)
+            if staged["ok"] as? Bool == true, let (focusID, originalSnapshot) = prepared {
+                var snapshot = originalSnapshot
+                snapshot.insertionClipboardVersion = staged["changeCount"] as? Int
+                focusSnapshots[focusID] = snapshot
+            }
+            respond(staged)
         case "restoreClipboard":
             guard let changeCount = command["changeCount"] as? Int else {
                 respond(["ok": false, "error": "invalid_clipboard_version"]); return
@@ -539,6 +682,40 @@ func selfTest(output: JSONOutput) {
     check(state.update(keyCode: 59, flags: .maskControl) == nil, "control_alone_ignored")
     check(state.update(keyCode: 58, flags: [.maskControl, .maskAlternate]) == "down", "combo_press")
     check(state.update(keyCode: 59, flags: .maskAlternate) == "up", "combo_release")
+    func checkInsertion(_ original: String, _ range: NSRange, _ text: String, _ expected: String, _ label: String,
+                        canReplaceSpaces: Bool = true, contextAvailable: Bool = true) {
+        let source = original as NSString
+        let end = range.location + range.length
+        let beforeLength = min(range.location, 64)
+        let before = contextAvailable ? source.substring(with: NSRange(location: range.location - beforeLength, length: beforeLength)) : nil
+        let after = contextAvailable ? source.substring(with: NSRange(location: end, length: min(source.length - end, 64))) : nil
+        let plan = InsertionPlan(text: text, selection: CFRange(location: range.location, length: range.length),
+                                 before: before, after: after, canReplaceSpaces: canReplaceSpaces)
+        let result = source.replacingCharacters(in: NSRange(location: plan.replacement.location, length: plan.replacement.length), with: plan.text)
+        check(result == expected, label)
+    }
+    checkInsertion("", NSRange(location: 0, length: 0), "Hello", "Hello ", "insert_trailing_space")
+    checkInsertion("", NSRange(location: 0, length: 0), "  Hello.  \n", "Hello. ", "insert_normalizes_transcript_edges")
+    checkInsertion("Hello ", NSRange(location: 6, length: 0), "world.", "Hello world. ", "insert_keeps_existing_separator")
+    checkInsertion("Hello", NSRange(location: 5, length: 0), "world", "Hello world ", "insert_adds_missing_separator")
+    for mark in [".", ",", "!", "?", ";", ":", "…"] {
+        checkInsertion("Hello ", NSRange(location: 6, length: 0), mark, "Hello" + mark + " ", "insert_punctuation_" + mark)
+    }
+    checkInsertion("Hello   ", NSRange(location: 8, length: 0), ".  ", "Hello. ", "insert_punctuation_removes_multiple_spaces")
+    checkInsertion("Hello  world", NSRange(location: 5, length: 0), "there", "Hello there world", "insert_reuses_following_spaces")
+    checkInsertion("Hello   world", NSRange(location: 6, length: 0), ".", "Hello. world", "insert_punctuation_between_words")
+    checkInsertion("Hello old world", NSRange(location: 6, length: 3), "new", "Hello new world", "insert_replaces_selection")
+    checkInsertion("world", NSRange(location: 0, length: 0), "Hello", "Hello world", "insert_at_start")
+    checkInsertion("Hello\n", NSRange(location: 6, length: 0), "world", "Hello\nworld ", "insert_preserves_preceding_newline")
+    checkInsertion("Hello\nworld", NSRange(location: 5, length: 0), ".", "Hello.\nworld", "insert_preserves_following_newline")
+    checkInsertion("Hello,", NSRange(location: 5, length: 0), "world", "Hello world,", "insert_before_existing_punctuation")
+    checkInsertion("(", NSRange(location: 1, length: 0), "Hello", "(Hello ", "insert_after_opening_bracket")
+    checkInsertion("Hej 👋 ", NSRange(location: 7, length: 0), ".", "Hej 👋. ", "insert_uses_utf16_offsets")
+    checkInsertion("Hello ", NSRange(location: 6, length: 0), "world", "Hello world ", "insert_without_context", contextAvailable: false)
+    checkInsertion("Hello world", NSRange(location: 5, length: 0), "there", "Hello there world", "insert_without_settable_selection", canReplaceSpaces: false)
+    checkInsertion("Hello\tworld", NSRange(location: 5, length: 0), ".", "Hello.\tworld", "insert_preserves_tabs")
+    let fallbackPlan = InsertionPlan(text: " \n ", selection: CFRange(location: 0, length: 0), before: nil, after: nil, canReplaceSpaces: false)
+    check(fallbackPlan.text.isEmpty, "insert_empty_text_is_empty")
     // Named test pasteboard: these checks never read or mutate the user's clipboard.
     let testBoard = NSPasteboard.withUniqueName()
     defer { testBoard.releaseGlobally() }

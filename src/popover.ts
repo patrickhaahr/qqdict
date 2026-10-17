@@ -1,4 +1,5 @@
 import type { AppState, Hotkey, TranscriptEntry } from './contracts';
+import { PRODUCT_NAME } from './product';
 
 const api = window.dictation;
 const element = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
@@ -100,7 +101,7 @@ function render(state: AppState): void {
       : state.phase === 'transcribing' ? 'Transcribing'
         : state.phase === 'error' ? 'Needs attention'
           : ready ? 'Ready' : 'Setup needed';
-  element('settings-button').setAttribute('aria-label', ready ? 'Open settings' : 'Finish qqdict setup');
+  element('settings-button').setAttribute('aria-label', ready ? 'Open settings' : `Finish ${PRODUCT_NAME} setup`);
   element('settings-button').title = ready ? 'Settings' : 'Finish setup';
   const shortcut = hotkeyLabel(state.hotkey);
   element('hotkey-label').textContent = shortcut;

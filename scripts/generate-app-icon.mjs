@@ -4,18 +4,20 @@ import { constants } from 'node:fs';
 import { copyFile, mkdir, mkdtemp, readFile, rename, rm } from 'node:fs/promises';
 import { dirname, extname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { buildIdentity } from './build-channel.mjs';
 
 const project = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const argumentsList = process.argv.slice(2);
+const { iconName, iconSource } = buildIdentity();
 if (argumentsList.includes('--help')) {
   console.log('Usage: pnpm run build:icon [--input master.png] [--output AppIcon.icns]');
-  console.log('Defaults: assets/app-icon.png → assets/AppIcon.icns. Requires a square PNG of at least 1024 × 1024 on macOS.');
+  console.log(`Defaults: assets/${iconSource} → assets/${iconName}.icns (QQDICT_CHANNEL selects nightly or production). Requires a square PNG of at least 1024 × 1024 on macOS.`);
   process.exit(0);
 }
 if (process.platform !== 'darwin') throw new Error('App icon generation requires macOS sips and iconutil.');
 
-let input = join(project, 'assets/app-icon.png');
-let output = join(project, 'assets/AppIcon.icns');
+let input = join(project, 'assets', iconSource);
+let output = join(project, 'assets', `${iconName}.icns`);
 for (let index = 0; index < argumentsList.length; index++) {
   const flag = argumentsList[index];
   const value = argumentsList[++index];

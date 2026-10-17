@@ -188,6 +188,22 @@ test('cache failure leaves a logged transcript in memory and later saves can rec
   assert.equal(reloaded.history[0].text, 'Keep even when cache fails.');
 });
 
+test('update flush refuses an unwritable cache and recovers in-memory history before restart', async t => {
+  const { options, store } = await fixture(t);
+  await mkdir(path.join(options.dataDirectory, 'history.json'), { recursive: true });
+  await assert.rejects(store.addTranscript('Keep this through the update.'));
+  await assert.rejects(store.flush());
+  await rm(path.join(options.dataDirectory, 'history.json'), { recursive: true });
+  // An update flush also waits for a settings write already in the queue.
+  const settings = store.updateSettings({ launchAtLogin: true });
+  await store.flush();
+  await settings;
+  const reloaded = new DictationStore(options);
+  await reloaded.load();
+  assert.equal(reloaded.history[0].text, 'Keep this through the update.');
+  assert.equal(reloaded.settings.launchAtLogin, true);
+});
+
 test('empty transcripts and invalid dates never create logs or history', async t => {
   const { options, store } = await fixture(t);
   await assert.rejects(store.addTranscript(' \n '), /empty transcript/);
