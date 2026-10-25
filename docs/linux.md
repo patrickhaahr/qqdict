@@ -20,9 +20,11 @@ The default shortcut is **Right Ctrl**. **Right Alt** and **Ctrl + Alt** are ava
 
 The Setup tab names whichever of these is missing. Its **Check again** button re-runs the checks.
 
+<img src="../assets/screenshots/setup-linux.png" width="460" alt="Linux Setup showing paste-tool and keyboard-access instructions with an example setup state">
+
 ## NixOS
 
-Build and run this checkout (the Linux port is in this fork):
+Build and run this checkout:
 
 ```sh
 nix run .
@@ -32,14 +34,14 @@ Or install it in your configuration:
 
 ```nix
 # flake inputs
-qqdict.url = "github:patrickhaahr/qqdict";
+qqdict.url = "github:qwertyu-alex/qqdict";
 
 # configuration.nix
 environment.systemPackages = [ inputs.qqdict.packages.${pkgs.system}.default ];
 users.users.<you>.extraGroups = [ "input" ];
 ```
 
-The GitHub input requires these changes to be pushed to the fork. For a local flake input, use `qqdict.url = "path:/absolute/path/to/qqdict";`.
+For a local flake input, use `qqdict.url = "path:/absolute/path/to/qqdict";`.
 
 The package runs nixpkgs' `electron_44` and adds `wl-clipboard` and `wtype` to its `PATH`. After joining the `input` group, log out and back in. The `input` group grants access to keyboard events across applications; qqdict needs it to detect a held modifier on Wayland.
 

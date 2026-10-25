@@ -6,6 +6,7 @@ import { createRequire } from 'node:module';
 import test from 'node:test';
 
 const require = createRequire(import.meta.url);
+
 // appdmg is an optional, macOS-only dependency; pnpm skips it on Linux.
 const installed = (() => { try { return require.resolve('appdmg'); } catch { return undefined; } })();
 const skip = installed ? false : 'appdmg is only installed on macOS';

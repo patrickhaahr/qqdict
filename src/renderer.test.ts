@@ -66,6 +66,7 @@ async function recorderFixture(options: { delayMicrophone?: boolean; delayModule
     require: (id: string) => {
       if (id === './recording-cues') return { playRecordingCue: () => options.delayCue ? cue.promise : Promise.resolve() };
       if (id === './product') return { PRODUCT_NAME: 'qqdict-test' };
+
       if (id === './hotkeys') return hotkeys;
       throw new Error(`Unexpected renderer dependency: ${id}`);
     },

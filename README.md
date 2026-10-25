@@ -6,7 +6,7 @@ Hold a key. Say it. Keep writing.
 
 qqdict is a small macOS menu bar and Linux tray app that turns your voice into text and pastes it into the app you’re using. It uses your existing Codex sign-in.
 
-This fork adds **Linux Wayland and NixOS support**. See the [Linux setup guide](docs/linux.md) for requirements, compositor rules, and development. The Mac downloads below are upstream releases.
+For **Linux Wayland and NixOS**, see the [Linux setup guide](docs/linux.md) for requirements, compositor rules, and development.
 
 **[Download qqdict for Mac →](https://github.com/qwertyu-alex/qqdict/releases/tag/v0.5.6)**
 
@@ -117,7 +117,7 @@ Each build targets the architecture of the installed Electron runtime. Separate 
 
 [Troubleshooting](docs/troubleshooting.md) covers permissions, fn behavior, microphone selection, and missing paste results. Report problems through [GitHub Issues](https://github.com/qwertyu-alex/qqdict/issues), including your macOS version, Mac architecture, qqdict version, and what happened. Omit transcripts, account tokens, and other private data.
 
-This fork supports **macOS and Linux Wayland**. The app is written in TypeScript with Electron; a Swift helper on macOS and a Node helper on Linux handle the global shortcut and paste. Linux reports should include your distribution, compositor, and session type. Contributions are welcome.
+qqdict supports **macOS and Linux Wayland**. The app is written in TypeScript with Electron; a Swift helper on macOS and a Node helper on Linux handle the global shortcut and paste. Linux reports should include your distribution, compositor, and session type. Contributions are welcome.
 
 ## License
 

@@ -26,6 +26,7 @@ export class CodexHarness {
   private executable(): string {
     if (process.env.CODEX_BINARY) return process.env.CODEX_BINARY;
     const home = os.homedir();
+
     // Desktop launchers often start without the login shell's PATH.
     const candidates = process.platform === 'linux' ? [
       path.join(home, '.nix-profile/bin/codex'),

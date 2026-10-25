@@ -14,6 +14,7 @@ export function autostartFile(env: NodeJS.ProcessEnv = process.env): string {
 // quoted form.
 function execArgument(argument: string): string {
   if (!/[\s"'\\><~|&;$*?#()`=%]/.test(argument)) return argument;
+
   return `"${argument.replace(/(["`$\\])/g, '\\$1')}"`;
 }
 
@@ -33,14 +34,21 @@ export function desktopEntry(launcher: string): string {
 
 export async function readAutostart(file = autostartFile()): Promise<boolean> {
   let text: string;
+
   try { text = await readFile(file, 'utf8'); } catch { return false; }
+
   // Desktop settings may disable an entry instead of deleting it.
   return !/^Hidden\s*=\s*true\s*$/m.test(text) && !/^X-GNOME-Autostart-enabled\s*=\s*false\s*$/m.test(text);
 }
 
 /** Writes the entry for `launcher`, or removes it when undefined. */
 export async function writeAutostart(launcher: string | undefined, file = autostartFile()): Promise<void> {
-  if (!launcher) { await rm(file, { force: true }); return; }
+  if (!launcher) {
+    await rm(file, { force: true });
+
+    return;
+  }
+
   await mkdir(path.dirname(file), { recursive: true });
   await writeFile(file, desktopEntry(launcher), 'utf8');
 }

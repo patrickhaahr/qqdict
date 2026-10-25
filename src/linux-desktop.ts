@@ -3,7 +3,9 @@ import { access, constants } from 'node:fs/promises';
 import path from 'node:path';
 
 export type DesktopWindow = { id: string; pid?: number; appId?: string };
+
 export type WindowManager = { name: string; focused(): Promise<DesktopWindow | null>; focus(id: string): Promise<void> };
+
 export type PasteTool = { name: 'wtype' | 'ydotool'; paste(terminal: boolean): Promise<void> };
 
 const TIMEOUT = 1500;
@@ -13,6 +15,7 @@ export function run(command: string, args: string[], input?: Buffer, maxBuffer =
     const child = execFile(command, args, { encoding: 'buffer', timeout: TIMEOUT, maxBuffer }, (error, stdout) => {
       if (error) reject(error); else resolve(stdout);
     });
+
     if (input) child.stdin?.end(input); else child.stdin?.end();
   });
 }
@@ -21,29 +24,53 @@ const json = async (command: string, args: string[]): Promise<unknown> => JSON.p
 
 export function parseNiriWindow(value: unknown): DesktopWindow | null {
   if (!value || typeof value !== 'object') return null;
+  // SAFETY: The envelope is a non-null object. Its fields remain unknown
+  // until checked below; the assertion assumes no field values.
   const window = value as { id?: unknown; pid?: unknown; app_id?: unknown };
+
   if (typeof window.id !== 'number') return null;
+
   return { id: String(window.id), pid: typeof window.pid === 'number' ? window.pid : undefined, appId: typeof window.app_id === 'string' ? window.app_id : undefined };
 }
 
 export function parseHyprlandWindow(value: unknown): DesktopWindow | null {
   if (!value || typeof value !== 'object') return null;
+  // SAFETY: The envelope is a non-null object; every field remains unknown
+  // until its value is checked before constructing DesktopWindow.
   const window = value as { address?: unknown; pid?: unknown; class?: unknown };
+
   if (typeof window.address !== 'string' || !window.address) return null;
+
   return { id: window.address, pid: typeof window.pid === 'number' && window.pid > 0 ? window.pid : undefined, appId: typeof window.class === 'string' ? window.class : undefined };
 }
 
 export function parseSwayTree(value: unknown): DesktopWindow | null {
-  type Node = { id?: unknown; pid?: unknown; app_id?: unknown; focused?: unknown; type?: unknown; nodes?: Node[]; floating_nodes?: Node[]; window_properties?: { class?: unknown } };
-  const stack: Node[] = value && typeof value === 'object' ? [value as Node] : [];
+  type Node = { id?: unknown; pid?: unknown; app_id?: unknown; focused?: unknown; type?: unknown; nodes?: unknown; floating_nodes?: unknown; window_properties?: unknown };
+
+  const stack = [value];
+
   while (stack.length) {
-    const node = stack.pop()!;
+    const candidate = stack.pop();
+
+    if (!candidate || typeof candidate !== 'object') continue;
+    // SAFETY: Only the object envelope is asserted. Child lists and window
+    // fields remain unknown and are checked independently before use.
+    const node = candidate as Node;
+
     if (node.focused === true && (node.type === 'con' || node.type === 'floating_con') && typeof node.id === 'number') {
-      const appId = typeof node.app_id === 'string' ? node.app_id : typeof node.window_properties?.class === 'string' ? node.window_properties.class : undefined;
+      let appId = typeof node.app_id === 'string' ? node.app_id : undefined;
+      const properties = node.window_properties;
+
+      if (appId === undefined && properties && typeof properties === 'object' && 'class' in properties && typeof properties.class === 'string') appId = properties.class;
+
       return { id: String(node.id), pid: typeof node.pid === 'number' ? node.pid : undefined, appId };
     }
-    stack.push(...(node.nodes ?? []), ...(node.floating_nodes ?? []));
+
+    if (Array.isArray(node.nodes)) stack.push(...node.nodes);
+
+    if (Array.isArray(node.floating_nodes)) stack.push(...node.floating_nodes);
   }
+
   return null;
 }
 
@@ -54,16 +81,19 @@ export function detectWindowManager(env: NodeJS.ProcessEnv = process.env): Windo
     focused: async () => parseNiriWindow(await json('niri', ['msg', '--json', 'focused-window'])),
     focus: async (id) => { await run('niri', ['msg', 'action', 'focus-window', '--id', id]); },
   };
+
   if (env.HYPRLAND_INSTANCE_SIGNATURE) return {
     name: 'Hyprland',
     focused: async () => parseHyprlandWindow(await json('hyprctl', ['-j', 'activewindow'])),
     focus: async (id) => { await run('hyprctl', ['dispatch', 'focuswindow', `address:${id}`]); },
   };
+
   if (env.SWAYSOCK) return {
     name: 'sway',
     focused: async () => parseSwayTree(await json('swaymsg', ['-r', '-t', 'get_tree'])),
     focus: async (id) => { await run('swaymsg', [`[con_id=${id}]`, 'focus']); },
   };
+
   return null;
 }
 
@@ -76,8 +106,13 @@ export function isTerminal(appId: string | undefined): boolean {
 
 export async function onPath(command: string, env: NodeJS.ProcessEnv = process.env): Promise<boolean> {
   for (const directory of (env.PATH ?? '').split(path.delimiter).filter(Boolean)) {
-    try { await access(path.join(directory, command), constants.X_OK); return true; } catch { /* Keep looking. */ }
+    try {
+      await access(path.join(directory, command), constants.X_OK);
+
+      return true;
+    } catch { /* Keep looking. */ }
   }
+
   return false;
 }
 
@@ -94,6 +129,7 @@ export async function detectPasteTool(env: NodeJS.ProcessEnv = process.env): Pro
   if (env.WAYLAND_DISPLAY && await onPath('wtype', env)) {
     try {
       await run('wtype', ['-s', '1']);
+
       return {
         name: 'wtype',
         paste: async (terminal) => {
@@ -102,9 +138,11 @@ export async function detectPasteTool(env: NodeJS.ProcessEnv = process.env): Pro
       };
     } catch { /* The compositor lacks virtual-keyboard support. */ }
   }
+
   if (await onPath('ydotool', env)) {
     try {
       await access(ydotoolSocket(env), constants.W_OK);
+
       // Raw evdev codes: Left Ctrl 29, Left Shift 42, V 47.
       return {
         name: 'ydotool',
@@ -114,5 +152,6 @@ export async function detectPasteTool(env: NodeJS.ProcessEnv = process.env): Pro
       };
     } catch { /* ydotoold is not running for this user. */ }
   }
+
   return null;
 }

@@ -18,6 +18,7 @@ import type { AppEvent, AppState, Settings, TranscriptEntry } from './contracts'
 const linux = process.platform === 'linux';
 
 app.setName(PRODUCT_NAME);
+
 // Names the Wayland app ID and links windows to the installed desktop entry.
 if (linux) app.setDesktopName(`${BUILD_IDENTITY.slug}.desktop`);
 app.setPath('userData', path.join(app.getPath('appData'), PRODUCT_NAME));
@@ -85,12 +86,15 @@ function icon(phase: AppState['phase']): Electron.NativeImage {
         distance = Math.min(distance, Math.hypot(x - center, dy) - radius);
       });
     }
+
     const offset = (row * size + column) * 4, alpha = Math.round(Math.max(0, Math.min(1, .5 - distance * scaleFactor)) * 255);
+
     // Linux trays do not tint template images; draw white for the usual dark panels.
     if (linux) data.fill(alpha, offset, offset + 3);
     data[offset + 3] = alpha;
   }
   const image = nativeImage.createFromBitmap(data, { width: size, height: size, scaleFactor });
+
   if (!linux) image.setTemplateImage(true);
   return image;
 }
@@ -185,6 +189,7 @@ function showSetup(): void {
 function togglePopover(): void {
   if (!popover || !tray) return;
   if (popover.isVisible()) { popover.hide(); return; }
+
   // Linux trays report no bounds; open by the pointer (Wayland places the window itself).
   const button = linux ? { ...screen.getCursorScreenPoint(), width: 0, height: 0 } : tray.getBounds();
   const area = screen.getDisplayMatching(button).workArea;
@@ -233,6 +238,7 @@ async function begin(manual: boolean): Promise<void> {
   current.commandStarted = true;
   recorder!.webContents.send('dictation:event', { type: 'command', command: 'start', takeId: current.id } satisfies AppEvent);
   popover?.hide(); publish();
+
   // Capture can start immediately. On Wayland, delay the island until the
   // original window is captured so a compositor cannot focus it too early.
   if (linux && !manual) void current.focusReady.then(() => { if (take === current) showOverlay(); });
@@ -336,17 +342,20 @@ function loginItem(): LoginItem {
   if (linux) {
     // The installed launcher sets QQDICT_EXEC; a development checkout has no stable command.
     const launcher = process.env.QQDICT_EXEC;
+
     return {
       managed: !!launcher, openedAtLogin: process.argv.includes(AUTOSTART_FLAG),
       read: () => readAutostart(), write: (openAtLogin) => writeAutostart(openAtLogin ? launcher : undefined),
     };
   }
+
   return {
     managed: app.isPackaged, openedAtLogin: app.getLoginItemSettings().wasOpenedAtLogin,
     read: async () => app.getLoginItemSettings().openAtLogin,
     write: async (openAtLogin) => app.setLoginItemSettings({ openAtLogin }),
   };
 }
+
 let login: LoginItem;
 
 function createBridge(): NativeBridge {
@@ -355,6 +364,7 @@ function createBridge(): NativeBridge {
     // Each keyboard holds a libuv pool thread in a blocking read.
     env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', UV_THREADPOOL_SIZE: '32' },
   });
+
   return new NativeBridge(app.isPackaged ? path.join(process.resourcesPath, 'native', 'DictationBridge') : path.join(__dirname, '..', 'native', 'build', 'DictationBridge'));
 }
 
@@ -412,11 +422,13 @@ async function initialize(): Promise<void> {
   store = new DictationStore({ dataDirectory: app.getPath('userData'), logDirectory: state.logDirectory });
   await store.load();
   login = loginItem();
+
   if (login.managed) {
     if (migrated) await login.write(store.settings.launchAtLogin);
     else {
       // Reflect changes made in Login Items or autostart settings instead of silently re-enabling them.
       const openAtLogin = await login.read();
+
       if (store.settings.launchAtLogin !== openAtLogin) await store.updateSettings({ launchAtLogin: openAtLogin });
     }
   }
@@ -457,6 +469,7 @@ async function initialize(): Promise<void> {
     overlay.loadFile(path.join(rendererDir, 'overlay.html')),
   ]);
   tray = new Tray(icon('idle')); tray.on('click', togglePopover); updateTray();
+
   // Some Linux tray hosts only open a menu, so it duplicates the popover's actions.
   if (linux) tray.setContextMenu(Menu.buildFromTemplate([
     { label: 'Recent transcripts', click: togglePopover }, { label: 'Settings…', click: showSetup },
@@ -464,6 +477,7 @@ async function initialize(): Promise<void> {
   ]));
   await Promise.all([refreshPermissions(), refreshConnection()]);
   await initializeUpdates();
+
   if (!linux) tray.on('right-click', () => tray?.popUpContextMenu(Menu.buildFromTemplate([
     { label: 'Settings…', click: showSetup }, { type: 'separator' }, updateMenuItem(),
     { type: 'separator' }, { label: `Quit ${PRODUCT_NAME}`, click: () => app.quit() },
@@ -471,6 +485,7 @@ async function initialize(): Promise<void> {
   app.setAboutPanelOptions({ applicationName: PRODUCT_NAME, applicationVersion: PRODUCT_VERSION,
     copyright: '© 2026 qqdict contributors', credits: `Push-to-talk dictation for ${linux ? 'Linux' : 'macOS'}.`,
     iconPath: path.join(__dirname, '..', 'assets', app.isPackaged ? 'app-icon.png' : BUILD_IDENTITY.iconSource), website: PRODUCT_REPOSITORY });
+
   // Linux windows would show this as a menu bar; text fields keep their native shortcuts.
   if (linux) Menu.setApplicationMenu(null);
   else Menu.setApplicationMenu(Menu.buildFromTemplate([
@@ -484,6 +499,7 @@ async function initialize(): Promise<void> {
       { label: 'Release notes and downloads…', click: () => { void shell.openExternal(`${PRODUCT_REPOSITORY}/releases`); } }] },
   ]));
   updates!.start();
+
   if (!login.openedAtLogin || Object.values(state.permissions).some((permission) => permission !== 'granted') || !state.connected) showSetup();
   setInterval(() => { if (take && !take.stopRequested) { state.elapsedSeconds = Math.min(300, Math.floor((Date.now() - take.startedAt) / 1000)); if (state.elapsedSeconds >= 300) end(); publish(); } }, 250).unref();
   powerMonitor.on('suspend', () => { suspended = true; cancel(); });
@@ -512,6 +528,7 @@ function bindIPC(): void {
     try {
       await store.updateSettings(settings); Object.assign(state, store.settings);
       await bridge.setHotkey(state.hotkey);
+
       if ('launchAtLogin' in settings && login.managed) await login.write(state.launchAtLogin);
       publish(); return snapshot();
     } finally {

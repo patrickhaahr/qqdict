@@ -6,7 +6,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { setTimeout as delay } from 'node:timers/promises';
 import { autostartFile, desktopEntry, readAutostart, writeAutostart } from './autostart';
-import { LinuxBridge } from './linux-bridge';
+import { LinuxBridge, type LinuxEvent } from './linux-bridge';
 import { ClipboardSession, preferredType, type ClipboardBackend } from './linux-clipboard';
 import { isTerminal, parseHyprlandWindow, parseNiriWindow, parseSwayTree } from './linux-desktop';
 import { decodeInputEvents, HoldHotkeyState, KEY, parseKeyboards } from './linux-input';
@@ -16,11 +16,14 @@ const KEY_A = 30, KEY_C = 46;
 // Formats a /proc/bus/input/devices bitmap: hex longs, most significant first.
 function bitmap(codes: number[], wordBits = 64): string {
   const words: bigint[] = [];
+
   for (const code of codes) {
     const index = Math.floor(code / wordBits);
+
     while (words.length <= index) words.push(0n);
     words[index] |= 1n << BigInt(code % wordBits);
   }
+
   return words.reverse().map((word) => word.toString(16)).join(' ');
 }
 
@@ -33,8 +36,10 @@ function inputEvent(type: number, code: number, value: number): Buffer {
   event.writeUInt16LE(type, 16);
   event.writeUInt16LE(code, 18);
   event.writeInt32LE(value, 20);
+
   return event;
 }
+
 const key = (code: number, value: number) => Buffer.concat([inputEvent(1, code, value), inputEvent(0, 0, 0)]);
 
 test('keyboards are the kbd devices with a Ctrl or Alt key', () => {
@@ -44,6 +49,7 @@ test('keyboards are the kbd devices with a Ctrl or Alt key', () => {
     device('Keyboard', 'sysrq kbd leds event2', '120013', [KEY.LEFTCTRL, KEY_A, KEY.RIGHTCTRL, KEY.RIGHTALT]),
     device('No handler', 'kbd', '120013', [KEY.LEFTCTRL]),
   ].join('\n\n');
+
   assert.deepEqual(parseKeyboards(devices), [{ name: 'Keyboard', event: 'event2' }]);
   assert.deepEqual(parseKeyboards(device('Small', 'kbd event3', '3', [KEY.RIGHTALT], 32), 32), [{ name: 'Small', event: 'event3' }]);
 });
@@ -57,8 +63,19 @@ test('input records decode keys and dropped events and skip buttons', () => {
 test('the hold shortcut cancels once when an ordinary key is pressed', () => {
   const state = new HoldHotkeyState();
   const pressed = new Set<number>();
-  const press = (code: number) => { pressed.add(code); return state.update(pressed, { kind: 'key', code, value: 1 }); };
-  const lift = (code: number) => { pressed.delete(code); return state.update(pressed, { kind: 'key', code, value: 0 }); };
+
+  const press = (code: number) => {
+    pressed.add(code);
+
+    return state.update(pressed, { kind: 'key', code, value: 1 });
+  };
+
+  const lift = (code: number) => {
+    pressed.delete(code);
+
+    return state.update(pressed, { kind: 'key', code, value: 0 });
+  };
+
   assert.equal(press(KEY.RIGHTCTRL), 'down');
   assert.equal(press(KEY.LEFTSHIFT), null);
   assert.equal(press(KEY_C), 'cancel');
@@ -78,24 +95,30 @@ test('window-manager replies parse to the focused window', () => {
   assert.equal(parseHyprlandWindow({ address: '' }), null);
   const tree = { id: 1, type: 'root', nodes: [{ id: 2, type: 'workspace', nodes: [{ id: 3, type: 'con', focused: false }], floating_nodes: [{ id: 4, type: 'floating_con', focused: true, pid: 9, window_properties: { class: 'Firefox' } }] }] };
   assert.deepEqual(parseSwayTree(tree), { id: '4', pid: 9, appId: 'Firefox' });
+  assert.equal(parseSwayTree({ nodes: [null, 7] }), null);
+  assert.equal(parseSwayTree({ nodes: {}, floating_nodes: false }), null);
 });
 
 test('terminals are recognised by app id', () => {
   for (const appId of ['foot', 'kitty', 'Alacritty', 'com.mitchellh.ghostty', 'org.wezfurlong.wezterm', 'org.gnome.Console']) assert.ok(isTerminal(appId), appId);
+
   for (const appId of ['firefox', 'code', 'org.gnome.Nautilus', 'steam', undefined]) assert.ok(!isTerminal(appId), String(appId));
 });
 
 function memoryClipboard(initial?: { type: string; data: string }) {
   let content: { type: string; data: Buffer } | null = initial ? { type: initial.type, data: Buffer.from(initial.data) } : null;
+
   const backend: ClipboardBackend = {
     types: async () => content ? (content.type === 'text/plain;charset=utf-8' ? [content.type, 'text/plain'] : [content.type]) : [],
     read: async (type, maximumBytes) => {
       if (!content || content.type !== type) throw new Error('missing type');
+
       return content.data.length > maximumBytes ? null : content.data;
     },
     write: async (type, data) => { content = { type, data }; },
     clear: async () => { content = null; },
   };
+
   return { backend, current: () => content, copy: (text: string) => { content = { type: 'text/plain;charset=utf-8', data: Buffer.from(text) }; } };
 }
 
@@ -110,9 +133,9 @@ test('a staged transcript is restored to the previous image', async () => {
   const clipboard = memoryClipboard({ type: 'image/png', data: 'png-bytes' });
   const session = new ClipboardSession(clipboard.backend);
   const staged = await session.stage('hello world');
-  assert.equal(staged.ok, true);
-  assert.equal(await session.hasStagedVersion(staged.changeCount as number), true);
-  assert.deepEqual(await session.restore(staged.changeCount as number), { ok: true, restored: true });
+  assert.ok(staged.ok);
+  assert.equal(await session.hasStagedVersion(staged.changeCount), true);
+  assert.deepEqual(await session.restore(staged.changeCount), { ok: true, restored: true });
   assert.equal(clipboard.current()?.type, 'image/png');
   assert.equal(clipboard.current()?.data.toString(), 'png-bytes');
 });
@@ -121,21 +144,24 @@ test('an empty clipboard is cleared again and a user copy is never overwritten',
   const empty = memoryClipboard();
   const session = new ClipboardSession(empty.backend);
   const staged = await session.stage('one');
-  assert.deepEqual(await session.restore(staged.changeCount as number), { ok: true, restored: true });
+  assert.ok(staged.ok);
+  assert.deepEqual(await session.restore(staged.changeCount), { ok: true, restored: true });
   assert.equal(empty.current(), null);
 
   const copied = memoryClipboard({ type: 'text/plain;charset=utf-8', data: 'before' });
   const second = new ClipboardSession(copied.backend);
   const take = await second.stage('two');
+  assert.ok(take.ok);
   copied.copy('the user copied this');
-  assert.equal(await second.hasStagedVersion(take.changeCount as number), false);
-  assert.deepEqual(await second.restore(take.changeCount as number), { ok: true, restored: false, reason: 'clipboard_changed' });
+  assert.equal(await second.hasStagedVersion(take.changeCount), false);
+  assert.deepEqual(await second.restore(take.changeCount), { ok: true, restored: false, reason: 'clipboard_changed' });
   assert.equal(copied.current()?.data.toString(), 'the user copied this');
 });
 
 test('a clipboard too large to snapshot is left alone', async () => {
   const clipboard = memoryClipboard({ type: 'image/png', data: 'x'.repeat(64) });
   const result = await new ClipboardSession(clipboard.backend, 16).stage('hello');
+  assert.ok(!result.ok);
   assert.equal(result.error, 'clipboard_snapshot_unavailable');
   assert.equal(clipboard.current()?.type, 'image/png');
 });
@@ -147,6 +173,7 @@ test('autostart entries quote the launcher and respect disabled entries', async 
   assert.match(desktopEntry('/home/me/My Apps/qqdict'), /^Exec="\/home\/me\/My Apps\/qqdict" --autostart$/m);
 
   const directory = await mkdtemp(path.join(os.tmpdir(), 'qqdict-autostart-'));
+
   try {
     const file = path.join(directory, 'autostart', 'qqdict.desktop');
     assert.equal(await readAutostart(file), false);
@@ -163,14 +190,17 @@ test('autostart entries quote the launcher and respect disabled entries', async 
 
 test('the helper turns device key events into hotkey and cancel events', { skip: process.platform !== 'linux' }, async () => {
   const directory = await mkdtemp(path.join(os.tmpdir(), 'qqdict-input-'));
-  const events: Record<string, unknown>[] = [];
+  const events: LinuxEvent[] = [];
+
   const bridge = new LinuxBridge((event) => { events.push(event); }, {
     devicesFile: path.join(directory, 'devices'), inputDirectory: directory, env: {},
   });
+
   const until = async (predicate: () => boolean) => {
     for (let attempt = 0; attempt < 100 && !predicate(); attempt++) await delay(20);
     assert.ok(predicate(), JSON.stringify(events));
   };
+
   try {
     await writeFile(path.join(directory, 'devices'), device('Keyboard', 'kbd event5', '120013', [KEY.LEFTCTRL, KEY_A, KEY.RIGHTCTRL]));
     execFileSync('mkfifo', [path.join(directory, 'event5')]);

@@ -13,10 +13,12 @@ const element = <T extends HTMLElement>(id: string): T => {
   if (!result) throw new Error(`Missing interface element: ${id}`);
   return result as T;
 };
+
 const linux = api?.platform === 'linux';
 const hotkeyLabel = (hotkey: Hotkey): string => hotkeyName(hotkey, api.platform);
 const errorText = (error: unknown): string => {
   const text = error instanceof Error ? error.message : String(error);
+
   if (/NotAllowedError|Permission denied|denied permission/i.test(text)) return linux ? 'The microphone was blocked. Check your desktop’s privacy settings or PipeWire, then try again.' : 'Allow Microphone access in System Settings → Privacy & Security, then try again.';
   if (/NotFoundError|Requested device not found/i.test(text)) return 'The selected microphone is unavailable. Choose another audio input.';
   return text || `${PRODUCT_NAME} could not finish. Please try again.`;
@@ -489,6 +491,7 @@ function runSettings(): void {
   }
   function renderSetup(next: AppState): void {
     const checkingConnection = refreshing || /^checking codex sign-in/i.test(next.label.trim());
+
     const steps: [keyof AppState['permissions'], string, string, string][] = linux ? [
       ['microphone', 'microphone', 'Microphone', 'Captures your voice.'],
       ['accessibility', 'accessibility', 'Paste', 'Pastes with wtype or ydotool and wl-clipboard.'],
@@ -498,6 +501,7 @@ function runSettings(): void {
       ['accessibility', 'accessibility', 'Accessibility', 'Pastes into the focused app.'],
       ['inputMonitoring', 'input', 'Input Monitoring', 'Detects your shortcut across apps.'],
     ];
+
     // Linux has no permission prompts; these steps explain the fix and check again.
     const linuxFixes: Partial<Record<keyof AppState['permissions'], string>> = {
       accessibility: 'Install wtype and wl-clipboard (or run ydotoold), then check again.',

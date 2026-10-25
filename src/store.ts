@@ -33,7 +33,8 @@ function errorMessage(error: unknown): string {
 
 function validateSettings(partial: Partial<Settings>, hotkeys: readonly Hotkey[]): void {
   if (!isObject(partial)) throw new TypeError('Settings must be an object.');
-  if ('hotkey' in partial && !hotkeys.includes(partial.hotkey as Hotkey)) {
+
+  if ('hotkey' in partial && !hotkeys.some(hotkey => hotkey === partial.hotkey)) {
     throw new TypeError(`Choose ${hotkeys.slice(0, -1).join(', ')}, or ${hotkeys.at(-1)} for the hotkey.`);
   }
   if ('microphoneId' in partial && typeof partial.microphoneId !== 'string') {
@@ -129,9 +130,11 @@ export class DictationStore {
         if (value.version !== 1 || !isObject(value.settings) || !Array.isArray(value.history)) valid = false;
         if (isObject(value.settings)) {
           const settings = value.settings;
-          if (this.hotkeys.includes(settings.hotkey as Hotkey)) this.savedSettings.hotkey = settings.hotkey as Hotkey;
+          const hotkey = this.hotkeys.find(hotkey => hotkey === settings.hotkey);
+
+          if (hotkey) this.savedSettings.hotkey = hotkey;
           // A shortcut from the other platform is valid data; keep this platform's default.
-          else if (![...supportedHotkeys('darwin'), ...supportedHotkeys('linux')].includes(settings.hotkey as Hotkey)) valid = false;
+          else if (![...supportedHotkeys('darwin'), ...supportedHotkeys('linux')].some(hotkey => hotkey === settings.hotkey)) valid = false;
           if (typeof settings.microphoneId === 'string') this.savedSettings.microphoneId = settings.microphoneId;
           else valid = false;
           if (typeof settings.launchAtLogin === 'boolean') this.savedSettings.launchAtLogin = settings.launchAtLogin;

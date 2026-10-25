@@ -28,6 +28,7 @@ export function hotkeyName(hotkey: Hotkey, platform: string): string {
 /** Compact key-cap label. */
 export function hotkeyKey(hotkey: Hotkey, platform: string): string {
   if (platform === 'linux') return hotkey === 'ctrl-option' ? 'Ctrl Alt' : hotkeyName(hotkey, platform);
+
   switch (hotkey) {
     case 'fn': return 'fn';
     case 'right-option': return 'Right ⌥';

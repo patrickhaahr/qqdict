@@ -52,6 +52,7 @@ export class NativeBridge extends EventEmitter {
         if (!pending) return;
         this.pending.delete(event.id);
         clearTimeout(pending.timer);
+
         if (event.ok === false) pending.reject(new Error(actionErrors[event.error] ?? event.message ?? `The ${this.system} action was not available.`));
         else pending.resolve(event);
       } else if (event.type === 'permissions') {
@@ -91,6 +92,7 @@ export class NativeBridge extends EventEmitter {
     const child = this.child;
     this.child = null;
     child?.kill();
+
     for (const pending of this.pending.values()) { clearTimeout(pending.timer); pending.reject(new Error(`${this.system} helper closed.`)); }
     this.pending.clear();
   }

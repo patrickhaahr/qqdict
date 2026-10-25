@@ -13,6 +13,7 @@ export function pasteTranscript(bridge: NativeBridge, text: string, target: Focu
 async function pasteOnce(bridge: NativeBridge, text: string, target: FocusTarget, signal?: AbortSignal): Promise<void> {
   signal?.throwIfAborted();
   if (target.secure) throw new Error('The target is a protected field. Copy the transcript from the menu bar if needed.');
+
   // The helper validates the captured window itself; Linux may lack a window PID.
   if (!target.focusId) throw new Error(bridgeErrorMessage(target.focusError) ?? 'Automatic paste needs Accessibility access and a focused text field. Your transcript is saved.');
   const insertion = text.trim();
