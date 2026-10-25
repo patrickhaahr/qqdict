@@ -20,7 +20,7 @@ The default shortcut is **Right Ctrl**. **Right Alt** and **Ctrl + Alt** are ava
 
 The Setup tab names whichever of these is missing. Its **Check again** button re-runs the checks.
 
-<img src="../assets/screenshots/setup-linux.png" width="460" alt="Linux Setup showing paste-tool and keyboard-access instructions with an example setup state">
+<img src="../assets/screenshots/setup-linux.png" width="460" alt="Linux Setup with all four checks ready">
 
 ## NixOS
 
