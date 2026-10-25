@@ -1,8 +1,11 @@
 overrides:
   appdmg>image-size: 2.0.3
 
-onlyBuiltDependencies:
+# Electron is downloaded by the root postinstall, which NixOS builds can skip.
+ignoredBuiltDependencies:
   - electron
+
+onlyBuiltDependencies:
   - esbuild
   - fs-xattr
   - fsevents

@@ -24,7 +24,7 @@ async function publication(t, { existing = 'absent', preview = false, signed = t
   await writeFile(path.join(directory, 'release-notes.md'), 'Release notes');
   // Exercise the workflow's real Bash, without GitHub credentials or network.
   const gh = path.join(directory, 'gh');
-  await writeFile(gh, `#!/usr/bin/env node
+  await writeFile(gh, `#!${process.execPath}
 const fs = require('node:fs');
 const path = require('node:path');
 const args = process.argv.slice(2);
@@ -43,7 +43,8 @@ if (args[1] === 'download') {
   const log = path.join(directory, 'calls.jsonl');
   await execute('bash', ['publish.sh'], {
     cwd: directory,
-    env: { ...process.env, PATH: `${directory}:${process.env.PATH}`, TASK_TEST_LOG: log,
+    // The workflow parses Node's boolean output as plain text.
+    env: { ...process.env, FORCE_COLOR: '0', PATH: `${directory}:${process.env.PATH}`, TASK_TEST_LOG: log,
       TASK_TEST_EXISTING: existing, TASK_RELEASE_TAG: 'v0.5.6', TASK_PRERELEASE: String(preview) },
   });
   return (await readFile(log, 'utf8')).trim().split('\n').map(line => JSON.parse(line));

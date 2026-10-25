@@ -1,4 +1,4 @@
-export type Hotkey = 'fn' | 'right-option' | 'ctrl-option';
+export type Hotkey = 'fn' | 'right-option' | 'ctrl-option' | 'right-ctrl';
 export type Phase = 'idle' | 'starting' | 'recording' | 'transcribing' | 'error';
 export type Permission = 'granted' | 'denied' | 'not-determined' | 'unavailable';
 export type TranscriptEntry = {
@@ -32,6 +32,7 @@ export type AppEvent =
   | { type: 'command'; command: 'start' | 'stop' | 'cancel'; takeId: number }
   | { type: 'status' | 'partial' | 'final' | 'error'; text?: string; status?: string; detail?: string; takeId?: number };
 export interface DictationAPI {
+  platform: NodeJS.Platform;
   getState(): Promise<AppState>;
   refresh(): Promise<AppState>;
   setSettings(settings: Partial<Settings>): Promise<AppState>;

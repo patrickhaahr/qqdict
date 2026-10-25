@@ -1,11 +1,11 @@
-import type { AppState, Hotkey, TranscriptEntry } from './contracts';
+import type { AppState, TranscriptEntry } from './contracts';
+import { hotkeyKey } from './hotkeys';
 import { PRODUCT_NAME } from './product';
 
 const api = window.dictation;
 const element = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
 const copyIcon = '<svg viewBox="0 0 16 16" aria-hidden="true"><rect x="5" y="5" width="8" height="9" rx="1.5"/><path d="M3.5 11H3a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1h7a1 1 0 0 1 1 1v.5"/></svg>';
 const checkIcon = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="m3 8 3 3 7-7"/></svg>';
-const hotkeyLabel = (hotkey: Hotkey): string => hotkey === 'fn' ? 'fn' : hotkey === 'right-option' ? 'Right ⌥' : '⌃ + ⌥';
 let historyFingerprint: string | undefined;
 let operationError = '';
 let lastPhase: AppState['phase'] | undefined;
@@ -103,7 +103,7 @@ function render(state: AppState): void {
           : ready ? 'Ready' : 'Setup needed';
   element('settings-button').setAttribute('aria-label', ready ? 'Open settings' : `Finish ${PRODUCT_NAME} setup`);
   element('settings-button').title = ready ? 'Settings' : 'Finish setup';
-  const shortcut = hotkeyLabel(state.hotkey);
+  const shortcut = hotkeyKey(state.hotkey, api.platform);
   element('hotkey-label').textContent = shortcut;
   element('shortcut-hint').setAttribute('aria-label', `Hold ${shortcut} to dictate`);
   if (state.phase !== lastPhase) operationError = '';

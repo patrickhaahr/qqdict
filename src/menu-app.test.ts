@@ -9,11 +9,12 @@ import { transform } from 'esbuild';
 import type { AppEvent } from './contracts';
 import type { FocusTarget } from './native';
 import { AppUpdater } from './updates';
+import * as hotkeys from './hotkeys';
 
 const menuCode = readFile('src/menu-app.ts', 'utf8').then((source) => transform(source, { loader: 'ts', format: 'cjs' }));
 const nodeRequire = createRequire(`${process.cwd()}/package.json`);
 
-async function menuFixture(options: { pasteCleanup?: Promise<void>; settingsCleanup?: Promise<void> } = {}) {
+async function menuFixture(options: { pasteCleanup?: Promise<void>; settingsCleanup?: Promise<void>; platform?: 'darwin' | 'linux' } = {}) {
   let resolveFocus!: (target: FocusTarget) => void;
   const focus = new Promise<FocusTarget>((resolve) => { resolveFocus = resolve; });
   const events: AppEvent[] = [];
@@ -28,7 +29,7 @@ async function menuFixture(options: { pasteCleanup?: Promise<void>; settingsClea
   const contents = { send: (_channel: string, event: AppEvent) => events.push(event) };
   const dependencies: Record<string, unknown> = {
     electron: {
-      app: { setName() {}, setPath() {}, getPath: () => '/tmp/qqdict-test', requestSingleInstanceLock: () => false, quit() {}, on() {} },
+      app: { setName() {}, setDesktopName() {}, setPath() {}, getPath: () => '/tmp/qqdict-test', requestSingleInstanceLock: () => false, quit() {}, on() {} },
       autoUpdater: nativeUpdates,
       ipcMain: { handle: (name: string, callback: (...args: any[]) => void) => listeners.set(name, callback),
         on: (name: string, callback: (...args: any[]) => void) => listeners.set(name, callback) },
@@ -37,12 +38,14 @@ async function menuFixture(options: { pasteCleanup?: Promise<void>; settingsClea
     './transport': { DictationTransport: class { cancel() {} }, safeMessage: String },
     './native': {}, './store': {}, './island-position': {}, './storage': {},
     './updates': {},
+    './hotkeys': hotkeys, './autostart': {},
     './product': { PRODUCT_NAME: 'qqdict-test', BUILD_IDENTITY: { journalDirectory: 'Dictation Test' } },
     './paste': { pasteTranscript: async (_bridge: unknown, _text: string, target: FocusTarget) => { pasted.push(target); await options.pasteCleanup; } },
   };
   const context = vm.createContext({
     require: (id: string) => id.startsWith('node:') ? nodeRequire(id) : dependencies[id],
     module: { exports: {} }, exports: {}, AbortController, Buffer, setTimeout, clearTimeout,
+    process: { platform: options.platform ?? 'darwin' },
     fixture: {
       contents,
       bridge: {
@@ -99,20 +102,22 @@ async function menuFixture(options: { pasteCleanup?: Promise<void>; settingsClea
   };
 }
 
-test('starts and stops capture while the original focus check is still pending', async (t) => {
-  const fixture = await menuFixture();
-  t.after(fixture.cleanup);
-  await fixture.begin();
-  assert.equal(fixture.events.filter(event => event.type === 'command' && event.command === 'start').length, 1);
-  fixture.end();
-  assert.equal(fixture.events.filter(event => event.type === 'command' && event.command === 'stop').length, 1);
-  const finishing = fixture.finalize();
-  await setImmediate();
-  assert.equal(fixture.pasted.length, 0, 'pasting still waits for the original field');
-  fixture.resolveFocus({ focusId: 'original-field', targetPid: 123 });
-  await finishing;
-  assert.equal(fixture.pasted[0]?.focusId, 'original-field');
-});
+for (const platform of ['darwin', 'linux'] as const) {
+  test(`starts and stops capture while the original focus check is still pending (${platform})`, { timeout: 5000 }, async (t) => {
+    const fixture = await menuFixture({ platform });
+    t.after(fixture.cleanup);
+    await fixture.begin();
+    assert.equal(fixture.events.filter(event => event.type === 'command' && event.command === 'start').length, 1);
+    fixture.end();
+    assert.equal(fixture.events.filter(event => event.type === 'command' && event.command === 'stop').length, 1);
+    const finishing = fixture.finalize();
+    await setImmediate();
+    assert.equal(fixture.pasted.length, 0, 'pasting still waits for the original field');
+    fixture.resolveFocus({ focusId: 'original-field', targetPid: 123 });
+    await finishing;
+    assert.equal(fixture.pasted[0]?.focusId, 'original-field');
+  });
+}
 
 test('discards a late focus snapshot after cancellation', async (t) => {
   const fixture = await menuFixture();

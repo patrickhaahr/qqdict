@@ -4,12 +4,11 @@ import { appendFile, copyFile, mkdir, readFile, rename, unlink, writeFile } from
 import path from 'node:path';
 import type { Hotkey, Settings, TranscriptEntry } from './contracts';
 import { isIslandAnchor, type IslandAnchor } from './island-position';
+import { defaultHotkey, supportedHotkeys } from './hotkeys';
 
-const DEFAULT_SETTINGS: Settings = { hotkey: 'fn', microphoneId: '', launchAtLogin: false };
-const HOTKEYS: Hotkey[] = ['fn', 'right-option', 'ctrl-option'];
 const HISTORY_LIMIT = 10;
 
-type StoreOptions = { dataDirectory: string; logDirectory: string; timeZone?: string };
+type StoreOptions = { dataDirectory: string; logDirectory: string; timeZone?: string; platform?: string };
 type TranscriptOptions = { pasted?: boolean; error?: string; now?: Date };
 type TranscriptUpdate = Pick<Partial<TranscriptEntry>, 'pasted' | 'error' | 'logError'>;
 export type IslandPlacement = { anchor: IslandAnchor; displayId?: number };
@@ -32,10 +31,10 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-function validateSettings(partial: Partial<Settings>): void {
+function validateSettings(partial: Partial<Settings>, hotkeys: readonly Hotkey[]): void {
   if (!isObject(partial)) throw new TypeError('Settings must be an object.');
-  if ('hotkey' in partial && !HOTKEYS.includes(partial.hotkey as Hotkey)) {
-    throw new TypeError('Choose fn, right-option, or ctrl-option for the hotkey.');
+  if ('hotkey' in partial && !hotkeys.includes(partial.hotkey as Hotkey)) {
+    throw new TypeError(`Choose ${hotkeys.slice(0, -1).join(', ')}, or ${hotkeys.at(-1)} for the hotkey.`);
   }
   if ('microphoneId' in partial && typeof partial.microphoneId !== 'string') {
     throw new TypeError('The microphone ID must be a string.');
@@ -79,14 +78,17 @@ export class DictationStore {
   private readonly logDirectory: string;
   private readonly timeZone: string;
   private readonly dateFormatter: Intl.DateTimeFormat;
-  private savedSettings: Settings = { ...DEFAULT_SETTINGS };
+  private readonly hotkeys: readonly Hotkey[];
+  private savedSettings: Settings;
   private savedHistory: TranscriptEntry[] = [];
   private savedIslandPlacement: IslandPlacement = { anchor: 'bottom-center' };
   private writeQueue: Promise<void> = Promise.resolve();
   private loaded = false;
   private preservationError?: Error;
 
-  constructor({ dataDirectory, logDirectory, timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone }: StoreOptions) {
+  constructor({ dataDirectory, logDirectory, timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone, platform = process.platform }: StoreOptions) {
+    this.hotkeys = supportedHotkeys(platform);
+    this.savedSettings = { hotkey: defaultHotkey(platform), microphoneId: '', launchAtLogin: false };
     this.dataDirectory = dataDirectory;
     this.logDirectory = logDirectory;
     this.historyFile = path.join(dataDirectory, 'history.json');
@@ -127,8 +129,9 @@ export class DictationStore {
         if (value.version !== 1 || !isObject(value.settings) || !Array.isArray(value.history)) valid = false;
         if (isObject(value.settings)) {
           const settings = value.settings;
-          if (HOTKEYS.includes(settings.hotkey as Hotkey)) this.savedSettings.hotkey = settings.hotkey as Hotkey;
-          else valid = false;
+          if (this.hotkeys.includes(settings.hotkey as Hotkey)) this.savedSettings.hotkey = settings.hotkey as Hotkey;
+          // A shortcut from the other platform is valid data; keep this platform's default.
+          else if (![...supportedHotkeys('darwin'), ...supportedHotkeys('linux')].includes(settings.hotkey as Hotkey)) valid = false;
           if (typeof settings.microphoneId === 'string') this.savedSettings.microphoneId = settings.microphoneId;
           else valid = false;
           if (typeof settings.launchAtLogin === 'boolean') this.savedSettings.launchAtLogin = settings.launchAtLogin;
@@ -173,7 +176,7 @@ export class DictationStore {
   updateSettings(partial: Partial<Settings>): Promise<void> {
     return this.enqueue(async () => {
       this.assertLoaded();
-      validateSettings(partial);
+      validateSettings(partial, this.hotkeys);
       // Copy only supported fields; never persist arbitrary values from IPC.
       this.savedSettings = {
         hotkey: partial.hotkey ?? this.savedSettings.hotkey,

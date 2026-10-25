@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { setTimeout as delay } from 'node:timers/promises';
-import type { MacBridge, FocusTarget } from './native';
+import type { NativeBridge, FocusTarget } from './native';
 import { pasteTranscript } from './paste';
 
 const target: FocusTarget = { targetPid: 123, focusId: 'the-original-field' };
@@ -12,8 +12,8 @@ function deferred<T = void>() {
   return { promise, resolve };
 }
 
-function fakeBridge(request: (command: string, fields: Record<string, unknown>) => Promise<unknown>): MacBridge {
-  return { request } as unknown as MacBridge;
+function fakeBridge(request: (command: string, fields: Record<string, unknown>) => Promise<unknown>): NativeBridge {
+  return { request } as unknown as NativeBridge;
 }
 
 test('a cancelled take never stages or posts text', async () => {

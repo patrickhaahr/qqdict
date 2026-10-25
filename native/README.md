@@ -1,5 +1,7 @@
 # qqdict macOS bridge
 
+Linux uses [`src/linux-bridge.ts`](../src/linux-bridge.ts) with the same JSON command protocol. See the [Linux guide](../docs/linux.md) for its requirements and platform limits. `pnpm run build:native` only compiles this Swift helper on macOS.
+
 This small Swift process reads only configured modifier flags. It communicates with
 Electron using newline-delimited JSON on stdin/stdout. It reads no keystroke text
 or audio. During an insertion staging command, it may read up to 64 UTF-16 units

@@ -5,6 +5,7 @@ import vm from 'node:vm';
 import test from 'node:test';
 import { transform } from 'esbuild';
 import type { AppEvent } from './contracts';
+import * as hotkeys from './hotkeys';
 
 const rendererCode = readFile('src/renderer.ts', 'utf8').then((source) => transform(source, { loader: 'ts', format: 'iife' }));
 function deferred<T>() {
@@ -65,6 +66,7 @@ async function recorderFixture(options: { delayMicrophone?: boolean; delayModule
     require: (id: string) => {
       if (id === './recording-cues') return { playRecordingCue: () => options.delayCue ? cue.promise : Promise.resolve() };
       if (id === './product') return { PRODUCT_NAME: 'qqdict-test' };
+      if (id === './hotkeys') return hotkeys;
       throw new Error(`Unexpected renderer dependency: ${id}`);
     },
     window: {

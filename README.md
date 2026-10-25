@@ -4,7 +4,9 @@
 
 Hold a key. Say it. Keep writing.
 
-qqdict is a small macOS menu bar app that turns your voice into text and pastes it into the field you’re using. It uses your existing Codex sign-in.
+qqdict is a small macOS menu bar and Linux tray app that turns your voice into text and pastes it into the app you’re using. It uses your existing Codex sign-in.
+
+This fork adds **Linux Wayland and NixOS support**. See the [Linux setup guide](docs/linux.md) for requirements, compositor rules, and development. The Mac downloads below are upstream releases.
 
 **[Download qqdict for Mac →](https://github.com/qwertyu-alex/qqdict/releases/tag/v0.5.6)**
 
@@ -30,6 +32,16 @@ Interface previews with example transcripts. Click any image to view it at full 
 
 ## Install
 
+On **Linux / NixOS**, build and run this checkout:
+
+```sh
+nix run .
+```
+
+The [Linux guide](docs/linux.md) covers keyboard access, paste tools, and installation in your NixOS configuration. The default Linux shortcut is **Right Ctrl**.
+
+On **macOS**:
+
 1. Download the `.dmg` for your Mac from [Releases](https://github.com/qwertyu-alex/qqdict/releases).
 2. Open it and drag **qqdict** into **Applications**.
 3. Open qqdict from **Applications** and complete the **Setup** tab: Codex sign-in, Microphone, Accessibility, and Input Monitoring.
@@ -47,7 +59,7 @@ Production builds with the automatic updater check for new stable releases and d
 
 ## Small by design
 
-- **Push to talk:** hold fn / Globe to record; release to transcribe. Right Option and Control + Option are available in Settings.
+- **Push to talk:** hold fn / Globe on Mac or Right Ctrl on Linux to record; release to transcribe. Settings offers alternative modifier shortcuts.
 - **Audio feedback:** a short rising tone signals the start of recording; a falling tone confirms the microphone has stopped.
 - **Paste where you write:** qqdict inserts into the originally focused field. If focus changes or the field is protected, your transcript stays available to copy.
 - **Automatic spacing:** dictated text gets a trailing space. In editors that expose cursor context, qqdict reuses existing spaces and attaches punctuation to the preceding word.
@@ -68,7 +80,11 @@ Production builds with the updater contact Electron's update service and GitHub 
 
 Accessibility enables paste into the focused app; Input Monitoring detects the selected modifier shortcut. The native helper observes modifier changes and focus metadata. During automatic paste, it reads up to 64 UTF-16 units on each side of the selection to adjust spacing; this context stays in the helper and is never sent to the transcription service, saved, or logged. It temporarily preserves the clipboard and restores it unless you copy something else in the meantime. A manual **Copy** intentionally replaces the clipboard.
 
+On Linux, the helper reads keyboard events to track held keys and cancel dictation when you type a chord; it does not save or emit typed text. Clipboard restoration and focus checks have [Wayland limitations](docs/linux.md#limitations).
+
 ## Build from source
+
+For **Linux**, follow [Linux development](docs/linux.md#development), which includes a Nix development shell and package. The instructions below build the macOS app.
 
 Use a Mac with **Node.js 22.12 or later**, **pnpm 10.9.0**, and the **Xcode Command Line Tools** installed. The `packageManager` field pins pnpm; `pnpm-lock.yaml` pins dependencies. Install pnpm through [Corepack](https://pnpm.io/10.x/installation#using-corepack) (`corepack enable pnpm`) to include the native dependency build tools.
 
@@ -101,7 +117,7 @@ Each build targets the architecture of the installed Electron runtime. Separate 
 
 [Troubleshooting](docs/troubleshooting.md) covers permissions, fn behavior, microphone selection, and missing paste results. Report problems through [GitHub Issues](https://github.com/qwertyu-alex/qqdict/issues), including your macOS version, Mac architecture, qqdict version, and what happened. Omit transcripts, account tokens, and other private data.
 
-qqdict currently supports **macOS only**. The app is written in TypeScript with Electron; a small Swift helper handles the global shortcut and safe paste. Contributions are welcome.
+This fork supports **macOS and Linux Wayland**. The app is written in TypeScript with Electron; a Swift helper on macOS and a Node helper on Linux handle the global shortcut and paste. Linux reports should include your distribution, compositor, and session type. Contributions are welcome.
 
 ## License
 

@@ -1,5 +1,7 @@
 # Install qqdict on macOS
 
+For Linux Wayland and NixOS, use the [Linux setup guide](linux.md).
+
 qqdict requires macOS 13 or later, a compatible Codex installation signed in with ChatGPT, a microphone, and internet access.
 
 ## Choose the download

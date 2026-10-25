@@ -4,16 +4,22 @@ import os from 'node:os';
 import { mkdir, readFile } from 'node:fs/promises';
 import { CodexHarness } from './harness';
 import { DictationTransport, safeMessage, type DictationEvent } from './transport';
-import { MacBridge, type FocusTarget } from './native';
+import { NativeBridge, type FocusTarget } from './native';
 import { DictationStore } from './store';
 import { pasteTranscript } from './paste';
 import { nearestIslandAnchor, positionForAnchor } from './island-position';
 import { migrateLegacyHistory } from './storage';
 import { BUILD_IDENTITY, PRODUCT_NAME, PRODUCT_VERSION, PRODUCT_REPOSITORY } from './product';
 import { AppUpdater, updateAvailability } from './updates';
+import { defaultHotkey, hotkeyName } from './hotkeys';
+import { AUTOSTART_FLAG, readAutostart, writeAutostart } from './autostart';
 import type { AppEvent, AppState, Settings, TranscriptEntry } from './contracts';
 
+const linux = process.platform === 'linux';
+
 app.setName(PRODUCT_NAME);
+// Names the Wayland app ID and links windows to the installed desktop entry.
+if (linux) app.setDesktopName(`${BUILD_IDENTITY.slug}.desktop`);
 app.setPath('userData', path.join(app.getPath('appData'), PRODUCT_NAME));
 let setup: BrowserWindow | null = null;
 let recorder: BrowserWindow | null = null;
@@ -21,7 +27,7 @@ let popover: BrowserWindow | null = null;
 let overlay: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let store: DictationStore;
-let bridge: MacBridge;
+let bridge: NativeBridge;
 let updates: AppUpdater | undefined;
 let quitting = false;
 let screenLocked = false;
@@ -39,7 +45,7 @@ let take: Take | null = null;
 const pendingFinalizations = new Set<Promise<void>>();
 const state: AppState = {
   phase: 'idle', connected: false, label: 'Checking Codex sign-in…', detail: '',
-  hotkey: 'fn', microphoneId: '', microphoneName: '', launchAtLogin: false,
+  hotkey: defaultHotkey(process.platform), microphoneId: '', microphoneName: '', launchAtLogin: false,
   permissions: { microphone: 'not-determined', accessibility: 'not-determined', inputMonitoring: 'not-determined' },
   history: [], logDirectory: path.join(os.homedir(), BUILD_IDENTITY.journalDirectory),
   level: 0, elapsedSeconds: 0, maxRecordingSeconds: 300,
@@ -79,10 +85,13 @@ function icon(phase: AppState['phase']): Electron.NativeImage {
         distance = Math.min(distance, Math.hypot(x - center, dy) - radius);
       });
     }
-    data[(row * size + column) * 4 + 3] = Math.round(Math.max(0, Math.min(1, .5 - distance * scaleFactor)) * 255);
+    const offset = (row * size + column) * 4, alpha = Math.round(Math.max(0, Math.min(1, .5 - distance * scaleFactor)) * 255);
+    // Linux trays do not tint template images; draw white for the usual dark panels.
+    if (linux) data.fill(alpha, offset, offset + 3);
+    data[offset + 3] = alpha;
   }
   const image = nativeImage.createFromBitmap(data, { width: size, height: size, scaleFactor });
-  image.setTemplateImage(true);
+  if (!linux) image.setTemplateImage(true);
   return image;
 }
 
@@ -90,7 +99,7 @@ function updateTray(): void {
   if (!tray || tray.isDestroyed()) return;
   tray?.setImage(icon(state.phase));
   const updateHint = updates?.status.phase === 'ready' ? ' · Update ready (right-click to restart)' : '';
-  tray?.setToolTip(`${PRODUCT_NAME} · ${state.phase === 'idle' ? 'Hold ' + state.hotkey + ' to dictate' : state.phase}${updateHint}`);
+  tray?.setToolTip(`${PRODUCT_NAME} · ${state.phase === 'idle' ? 'Hold ' + hotkeyName(state.hotkey, process.platform) + ' to dictate' : state.phase}${updateHint}`);
   tray?.setTitle(state.phase === 'recording' ? '•' : state.phase === 'transcribing' ? '…' : '');
 }
 
@@ -176,7 +185,8 @@ function showSetup(): void {
 function togglePopover(): void {
   if (!popover || !tray) return;
   if (popover.isVisible()) { popover.hide(); return; }
-  const button = tray.getBounds();
+  // Linux trays report no bounds; open by the pointer (Wayland places the window itself).
+  const button = linux ? { ...screen.getCursorScreenPoint(), width: 0, height: 0 } : tray.getBounds();
   const area = screen.getDisplayMatching(button).workArea;
   const width = popover.getBounds().width;
   popover.setPosition(Math.round(Math.max(area.x, Math.min(button.x + button.width / 2 - width / 2, area.x + area.width - width))), Math.max(area.y, button.y + button.height + 4));
@@ -184,7 +194,8 @@ function togglePopover(): void {
 }
 
 async function refreshPermissions(): Promise<void> {
-  const mic = systemPreferences.getMediaAccessStatus('microphone');
+  // Linux has no app microphone permission; PipeWire or the device decides when capture starts.
+  const mic = linux ? 'granted' : systemPreferences.getMediaAccessStatus('microphone');
   state.permissions.microphone = mic === 'granted' ? 'granted' : mic === 'not-determined' ? 'not-determined' : 'denied';
   try {
     const permissions = await bridge.request<{ inputMonitoring: boolean; accessibility: boolean; eventTapActive: boolean }>('status');
@@ -221,7 +232,11 @@ async function begin(manual: boolean): Promise<void> {
   }
   current.commandStarted = true;
   recorder!.webContents.send('dictation:event', { type: 'command', command: 'start', takeId: current.id } satisfies AppEvent);
-  popover?.hide(); publish(); showOverlay();
+  popover?.hide(); publish();
+  // Capture can start immediately. On Wayland, delay the island until the
+  // original window is captured so a compositor cannot focus it too early.
+  if (linux && !manual) void current.focusReady.then(() => { if (take === current) showOverlay(); });
+  else showOverlay();
 }
 
 function end(): void {
@@ -315,6 +330,34 @@ function handleTransport(event: DictationEvent): void {
   else if (event.type === 'error') fail(event.text ?? 'Dictation failed.');
 }
 
+type LoginItem = { managed: boolean; openedAtLogin: boolean; read(): Promise<boolean>; write(openAtLogin: boolean): Promise<void> };
+
+function loginItem(): LoginItem {
+  if (linux) {
+    // The installed launcher sets QQDICT_EXEC; a development checkout has no stable command.
+    const launcher = process.env.QQDICT_EXEC;
+    return {
+      managed: !!launcher, openedAtLogin: process.argv.includes(AUTOSTART_FLAG),
+      read: () => readAutostart(), write: (openAtLogin) => writeAutostart(openAtLogin ? launcher : undefined),
+    };
+  }
+  return {
+    managed: app.isPackaged, openedAtLogin: app.getLoginItemSettings().wasOpenedAtLogin,
+    read: async () => app.getLoginItemSettings().openAtLogin,
+    write: async (openAtLogin) => app.setLoginItemSettings({ openAtLogin }),
+  };
+}
+let login: LoginItem;
+
+function createBridge(): NativeBridge {
+  if (linux) return new NativeBridge(process.execPath, {
+    args: [path.join(__dirname, 'linux-bridge.js')], system: 'Linux',
+    // Each keyboard holds a libuv pool thread in a blocking read.
+    env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', UV_THREADPOOL_SIZE: '32' },
+  });
+  return new NativeBridge(app.isPackaged ? path.join(process.resourcesPath, 'native', 'DictationBridge') : path.join(__dirname, '..', 'native', 'build', 'DictationBridge'));
+}
+
 function createSurface(options: Electron.BrowserWindowConstructorOptions): BrowserWindow {
   const window = new BrowserWindow({ ...options, webPreferences: {
     preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true,
@@ -343,7 +386,7 @@ async function initializeUpdates(): Promise<void> {
     availability: updateAvailability({
       isPackaged: app.isPackaged, channel: BUILD_IDENTITY.channel, platform: process.platform, arch: process.arch,
       version: app.getVersion(), bundleId: BUILD_IDENTITY.bundleId,
-      inApplicationsFolder: app.isPackaged && app.isInApplicationsFolder(), configuration,
+      inApplicationsFolder: !linux && app.isPackaged && app.isInApplicationsFolder(), configuration,
     }),
     updater: autoUpdater,
     isBusy: updateBusy,
@@ -368,27 +411,30 @@ async function initialize(): Promise<void> {
     && await migrateLegacyHistory(app.getPath('userData'), path.join(app.getPath('appData'), 'Codex Dictation'));
   store = new DictationStore({ dataDirectory: app.getPath('userData'), logDirectory: state.logDirectory });
   await store.load();
-  if (app.isPackaged) {
-    if (migrated) app.setLoginItemSettings({ openAtLogin: store.settings.launchAtLogin });
-    else if (store.settings.launchAtLogin !== app.getLoginItemSettings().openAtLogin) {
-      // Reflect changes made in macOS Login Items instead of silently re-enabling them.
-      await store.updateSettings({ launchAtLogin: app.getLoginItemSettings().openAtLogin });
+  login = loginItem();
+  if (login.managed) {
+    if (migrated) await login.write(store.settings.launchAtLogin);
+    else {
+      // Reflect changes made in Login Items or autostart settings instead of silently re-enabling them.
+      const openAtLogin = await login.read();
+      if (store.settings.launchAtLogin !== openAtLogin) await store.updateSettings({ launchAtLogin: openAtLogin });
     }
   }
   Object.assign(state, store.settings);
-  const binary = app.isPackaged ? path.join(process.resourcesPath, 'native', 'DictationBridge') : path.join(__dirname, '..', 'native', 'build', 'DictationBridge');
-  bridge = new MacBridge(binary);
+  bridge = createBridge();
   bridge.on('permissions', () => { void refreshPermissions(); });
   bridge.on('hotkey', (event) => { if (event.phase === 'down') void begin(false); else if (event.phase === 'up') end(); });
-  bridge.on('cancel', cancel);
+  // Linux cancels when the held shortcut becomes part of a chord such as Ctrl+C.
+  bridge.on('cancel', () => { if (take) cancel(); });
   bridge.start();
   await bridge.setHotkey(state.hotkey).catch(() => {});
   app.dock?.hide();
   const area = screen.getPrimaryDisplay().workArea;
-  setup = createSurface({ width: 460, height: Math.min(590, area.height - 40), minWidth: 420, minHeight: 540, show: false, title: PRODUCT_NAME, titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 16, y: 18 }, backgroundColor: '#212121' });
+  setup = createSurface({ width: 460, height: Math.min(590, area.height - 40), minWidth: 420, minHeight: 540, show: false, title: PRODUCT_NAME, backgroundColor: '#212121',
+    ...(linux ? { autoHideMenuBar: true } : { titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 16, y: 18 } }) });
   recorder = createSurface({ width: 1, height: 1, show: false, focusable: false, skipTaskbar: true, webPreferences: { backgroundThrottling: false, autoplayPolicy: 'no-user-gesture-required' } });
   popover = createSurface({ width: 392, height: Math.min(550, area.height - 40), show: false, frame: false, transparent: true, hasShadow: false, resizable: false, skipTaskbar: true, title: `${PRODUCT_NAME} · Recent`, backgroundColor: '#00000000' });
-  overlay = createSurface({ width: 312, height: 76, show: false, type: 'panel', frame: false, transparent: true, focusable: false, acceptFirstMouse: true, resizable: false, hasShadow: false, alwaysOnTop: true, skipTaskbar: true });
+  overlay = createSurface({ width: 312, height: 76, show: false, title: `${PRODUCT_NAME} status`, type: 'panel', frame: false, transparent: true, focusable: false, acceptFirstMouse: true, resizable: false, hasShadow: false, alwaysOnTop: true, skipTaskbar: true });
   overlay.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true }); overlay.setAlwaysOnTop(true, 'floating');
   updateOverlayMouseInput();
   const adjustOverlay = () => { overlayDrag = null; positionOverlay(); updateOverlayMouseInput(); if (!take && overlay?.isVisible()) dismissOverlay(); };
@@ -411,16 +457,23 @@ async function initialize(): Promise<void> {
     overlay.loadFile(path.join(rendererDir, 'overlay.html')),
   ]);
   tray = new Tray(icon('idle')); tray.on('click', togglePopover); updateTray();
+  // Some Linux tray hosts only open a menu, so it duplicates the popover's actions.
+  if (linux) tray.setContextMenu(Menu.buildFromTemplate([
+    { label: 'Recent transcripts', click: togglePopover }, { label: 'Settings…', click: showSetup },
+    { type: 'separator' }, { label: `Quit ${PRODUCT_NAME}`, click: () => app.quit() },
+  ]));
   await Promise.all([refreshPermissions(), refreshConnection()]);
   await initializeUpdates();
-  tray.on('right-click', () => tray?.popUpContextMenu(Menu.buildFromTemplate([
+  if (!linux) tray.on('right-click', () => tray?.popUpContextMenu(Menu.buildFromTemplate([
     { label: 'Settings…', click: showSetup }, { type: 'separator' }, updateMenuItem(),
     { type: 'separator' }, { label: `Quit ${PRODUCT_NAME}`, click: () => app.quit() },
   ])));
   app.setAboutPanelOptions({ applicationName: PRODUCT_NAME, applicationVersion: PRODUCT_VERSION,
-    copyright: '© 2026 qqdict contributors', credits: 'Push-to-talk dictation for macOS.',
+    copyright: '© 2026 qqdict contributors', credits: `Push-to-talk dictation for ${linux ? 'Linux' : 'macOS'}.`,
     iconPath: path.join(__dirname, '..', 'assets', app.isPackaged ? 'app-icon.png' : BUILD_IDENTITY.iconSource), website: PRODUCT_REPOSITORY });
-  Menu.setApplicationMenu(Menu.buildFromTemplate([
+  // Linux windows would show this as a menu bar; text fields keep their native shortcuts.
+  if (linux) Menu.setApplicationMenu(null);
+  else Menu.setApplicationMenu(Menu.buildFromTemplate([
     { label: PRODUCT_NAME, submenu: [{ role: 'about', label: `About ${PRODUCT_NAME}` },
       updateMenuItem(),
       { type: 'separator' }, { label: 'Settings…', accelerator: 'CommandOrControl+,', click: showSetup },
@@ -431,7 +484,7 @@ async function initialize(): Promise<void> {
       { label: 'Release notes and downloads…', click: () => { void shell.openExternal(`${PRODUCT_REPOSITORY}/releases`); } }] },
   ]));
   updates!.start();
-  if (!app.getLoginItemSettings().wasOpenedAtLogin || Object.values(state.permissions).some((permission) => permission !== 'granted') || !state.connected) showSetup();
+  if (!login.openedAtLogin || Object.values(state.permissions).some((permission) => permission !== 'granted') || !state.connected) showSetup();
   setInterval(() => { if (take && !take.stopRequested) { state.elapsedSeconds = Math.min(300, Math.floor((Date.now() - take.startedAt) / 1000)); if (state.elapsedSeconds >= 300) end(); publish(); } }, 250).unref();
   powerMonitor.on('suspend', () => { suspended = true; cancel(); });
   powerMonitor.on('lock-screen', () => { screenLocked = true; cancel(); });
@@ -459,7 +512,7 @@ function bindIPC(): void {
     try {
       await store.updateSettings(settings); Object.assign(state, store.settings);
       await bridge.setHotkey(state.hotkey);
-      if ('launchAtLogin' in settings && app.isPackaged) app.setLoginItemSettings({ openAtLogin: state.launchAtLogin });
+      if ('launchAtLogin' in settings && login.managed) await login.write(state.launchAtLogin);
       publish(); return snapshot();
     } finally {
       pendingSettings--;
@@ -467,7 +520,7 @@ function bindIPC(): void {
     }
   });
   handle('permission', async (_event, kind: keyof AppState['permissions']) => {
-    if (kind === 'microphone') await systemPreferences.askForMediaAccess('microphone');
+    if (kind === 'microphone') { if (!linux) await systemPreferences.askForMediaAccess('microphone'); }
     else if (kind === 'accessibility') await bridge.request('requestAccessibility');
     else if (kind === 'inputMonitoring') await bridge.request('requestInputMonitoring');
     else throw new Error('Unknown permission.');

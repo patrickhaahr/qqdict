@@ -14,7 +14,11 @@ concurrency:
 
 jobs:
   check:
-    runs-on: macos-15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
@@ -27,6 +31,7 @@ jobs:
       - run: pnpm test
       - run: pnpm run build:native
       - name: Native behavior and protocol
+        if: runner.os == 'macOS'
         run: |
           native/build/DictationBridge --self-test
           python3 native/test-protocol.py

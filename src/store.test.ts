@@ -8,7 +8,7 @@ import { DictationStore } from './store';
 async function fixture(t: test.TestContext) {
   const root = await mkdtemp(path.join(os.tmpdir(), 'dictation-store-'));
   t.after(() => rm(root, { recursive: true, force: true }));
-  const options = { dataDirectory: path.join(root, 'app-data'), logDirectory: path.join(root, 'Dictation'), timeZone: 'Europe/Copenhagen' };
+  const options = { dataDirectory: path.join(root, 'app-data'), logDirectory: path.join(root, 'Dictation'), timeZone: 'Europe/Copenhagen', platform: 'darwin' };
   const store = new DictationStore(options);
   await store.load();
   return { root, options, store };
@@ -58,6 +58,21 @@ test('settings validate partial updates, persist, and cannot be mutated through 
   const reloaded = new DictationStore(options);
   await reloaded.load();
   assert.deepEqual(reloaded.settings, { hotkey: 'right-option', microphoneId: 'external-mic', launchAtLogin: true });
+});
+
+test('Linux defaults to Right Ctrl and replaces a Mac-only shortcut without flagging damage', async t => {
+  const { options } = await fixture(t);
+  const linux = { ...options, platform: 'linux' };
+  const store = new DictationStore(linux);
+  await store.load();
+  assert.equal(store.settings.hotkey, 'right-ctrl');
+  await assert.rejects(store.updateSettings({ hotkey: 'fn' }), /Choose right-ctrl, right-option, or ctrl-option/);
+  await mkdir(options.dataDirectory, { recursive: true });
+  await writeFile(path.join(options.dataDirectory, 'history.json'), JSON.stringify({ version: 1, settings: { hotkey: 'fn', microphoneId: 'mic', launchAtLogin: false }, history: [] }));
+  const migrated = new DictationStore(linux);
+  await migrated.load();
+  assert.deepEqual(migrated.settings, { hotkey: 'right-ctrl', microphoneId: 'mic', launchAtLogin: false });
+  assert.deepEqual(await readdir(options.dataDirectory), ['history.json']);
 });
 
 test('island placement persists independently from settings and cannot be mutated externally', async t => {

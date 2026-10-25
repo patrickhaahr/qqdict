@@ -18,18 +18,28 @@ const actionErrors: Record<string, string> = {
   no_focused_field: 'This field does not support automatic paste. Copy the transcript from History.',
   secure_field: 'Protected fields do not support automatic paste. Copy the transcript from History.',
   modifier_held: 'Release the shortcut before pasting. Your transcript is available in History.',
+  paste_unavailable: 'Install wtype and wl-clipboard (or run ydotoold) to paste automatically. Your transcript is available in History.',
+  clipboard_unavailable: 'Install wl-clipboard to paste automatically. Your transcript is available in History.',
 };
 
-export class MacBridge extends EventEmitter {
+export function bridgeErrorMessage(code: string | undefined): string | undefined {
+  return code === undefined ? undefined : actionErrors[code];
+}
+
+type BridgeOptions = { args?: string[]; env?: NodeJS.ProcessEnv; system?: string };
+
+/** Newline-delimited JSON client for the platform helper (Swift on macOS, Node on Linux). */
+export class NativeBridge extends EventEmitter {
   private child: ChildProcessWithoutNullStreams | null = null;
   private nextId = 1;
   private pending = new Map<number, { resolve: (result: any) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> }>();
   permissions: NativeStatus = { inputMonitoring: false, accessibility: false, eventTapActive: false };
-  constructor(private binary: string) { super(); }
+  private readonly system: string;
+  constructor(private binary: string, private options: BridgeOptions = {}) { super(); this.system = options.system ?? 'macOS'; }
 
   start(): void {
     if (this.child) return;
-    const child = spawn(this.binary, [], { stdio: ['pipe', 'pipe', 'pipe'] });
+    const child = spawn(this.binary, this.options.args ?? [], { stdio: ['pipe', 'pipe', 'pipe'], env: this.options.env });
     this.child = child;
     child.stderr.on('data', () => {});
     createInterface({ input: child.stdout }).on('line', (line) => {
@@ -42,7 +52,7 @@ export class MacBridge extends EventEmitter {
         if (!pending) return;
         this.pending.delete(event.id);
         clearTimeout(pending.timer);
-        if (event.ok === false) pending.reject(new Error(actionErrors[event.error] ?? event.message ?? 'The macOS action was not available.'));
+        if (event.ok === false) pending.reject(new Error(actionErrors[event.error] ?? event.message ?? `The ${this.system} action was not available.`));
         else pending.resolve(event);
       } else if (event.type === 'permissions') {
         this.permissions = event;
@@ -55,7 +65,7 @@ export class MacBridge extends EventEmitter {
       this.child = null;
       for (const pending of this.pending.values()) {
         clearTimeout(pending.timer);
-        pending.reject(new Error('The macOS hotkey helper stopped. Restart qqdict.'));
+        pending.reject(new Error(`The ${this.system} hotkey helper stopped. Restart qqdict.`));
       }
       this.pending.clear();
       this.permissions = { inputMonitoring: false, accessibility: false, eventTapActive: false };
@@ -66,10 +76,10 @@ export class MacBridge extends EventEmitter {
   }
 
   request<T = Record<string, any>>(command: string, fields: Record<string, unknown> = {}): Promise<T> {
-    if (!this.child || this.child.killed) return Promise.reject(new Error('The macOS helper is unavailable.'));
+    if (!this.child || this.child.killed) return Promise.reject(new Error(`The ${this.system} helper is unavailable.`));
     const id = this.nextId++;
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => { this.pending.delete(id); reject(new Error('macOS did not respond to the requested action.')); }, 10_000);
+      const timer = setTimeout(() => { this.pending.delete(id); reject(new Error(`${this.system} did not respond to the requested action.`)); }, 10_000);
       this.pending.set(id, { resolve, reject, timer });
       this.child!.stdin.write(JSON.stringify({ id, command, ...fields }) + '\n');
     });
@@ -81,7 +91,7 @@ export class MacBridge extends EventEmitter {
     const child = this.child;
     this.child = null;
     child?.kill();
-    for (const pending of this.pending.values()) { clearTimeout(pending.timer); pending.reject(new Error('macOS helper closed.')); }
+    for (const pending of this.pending.values()) { clearTimeout(pending.timer); pending.reject(new Error(`${this.system} helper closed.`)); }
     this.pending.clear();
   }
 }

@@ -1,5 +1,7 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { existsSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { createInterface } from 'node:readline';
 import { PRODUCT_NAME, PRODUCT_VERSION } from './product';
 
@@ -23,7 +25,17 @@ export class CodexHarness {
 
   private executable(): string {
     if (process.env.CODEX_BINARY) return process.env.CODEX_BINARY;
-    const candidates = [
+    const home = os.homedir();
+    // Desktop launchers often start without the login shell's PATH.
+    const candidates = process.platform === 'linux' ? [
+      path.join(home, '.nix-profile/bin/codex'),
+      `/etc/profiles/per-user/${os.userInfo().username}/bin/codex`,
+      '/run/current-system/sw/bin/codex',
+      path.join(home, '.local/bin/codex'),
+      path.join(home, '.npm-global/bin/codex'),
+      '/usr/local/bin/codex',
+      '/usr/bin/codex',
+    ] : [
       '/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex',
       '/Applications/Codex.app/Contents/Resources/codex',
       '/opt/homebrew/bin/codex',

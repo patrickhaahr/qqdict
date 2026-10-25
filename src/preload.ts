@@ -3,6 +3,7 @@ import type { AppEvent, DictationAPI } from './contracts';
 
 const invoke = (action: string, ...args: unknown[]) => ipcRenderer.invoke(`dictation:${action}`, ...args);
 const api: DictationAPI = {
+  platform: process.platform,
   getState: () => invoke('state'),
   refresh: () => invoke('refresh'),
   setSettings: (settings) => invoke('settings', settings),

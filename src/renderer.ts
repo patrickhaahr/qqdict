@@ -1,6 +1,7 @@
 import type { AppEvent, AppState, DictationAPI, Hotkey } from './contracts';
 import { playRecordingCue } from './recording-cues';
 import { PRODUCT_NAME } from './product';
+import { hotkeyKey, hotkeyName, supportedHotkeys } from './hotkeys';
 
 declare global { interface Window { dictation: DictationAPI } }
 
@@ -12,10 +13,11 @@ const element = <T extends HTMLElement>(id: string): T => {
   if (!result) throw new Error(`Missing interface element: ${id}`);
   return result as T;
 };
-const hotkeyLabel = (hotkey: Hotkey): string => hotkey === 'fn' ? 'fn' : hotkey === 'right-option' ? 'Right Option' : 'Control + Option';
+const linux = api?.platform === 'linux';
+const hotkeyLabel = (hotkey: Hotkey): string => hotkeyName(hotkey, api.platform);
 const errorText = (error: unknown): string => {
   const text = error instanceof Error ? error.message : String(error);
-  if (/NotAllowedError|Permission denied|denied permission/i.test(text)) return 'Allow Microphone access in System Settings → Privacy & Security, then try again.';
+  if (/NotAllowedError|Permission denied|denied permission/i.test(text)) return linux ? 'The microphone was blocked. Check your desktop’s privacy settings or PipeWire, then try again.' : 'Allow Microphone access in System Settings → Privacy & Security, then try again.';
   if (/NotFoundError|Requested device not found/i.test(text)) return 'The selected microphone is unavailable. Choose another audio input.';
   return text || `${PRODUCT_NAME} could not finish. Please try again.`;
 };
@@ -363,6 +365,7 @@ function runSettings(): void {
   const app = document.querySelector<HTMLElement>('.app')!;
   const recordButton = element<HTMLButtonElement>('record-button');
   const hotkeySelect = element<HTMLSelectElement>('hotkey-select');
+  hotkeySelect.replaceChildren(...supportedHotkeys(api.platform).map((hotkey) => new Option(hotkeyLabel(hotkey), hotkey)));
   const microphoneSelect = element<HTMLSelectElement>('microphone-select');
   const loginSwitch = element<HTMLInputElement>('launch-at-login');
   const transcript = element('transcript');
@@ -486,15 +489,24 @@ function runSettings(): void {
   }
   function renderSetup(next: AppState): void {
     const checkingConnection = refreshing || /^checking codex sign-in/i.test(next.label.trim());
-    const steps: [keyof AppState['permissions'], string, string, string][] = [
+    const steps: [keyof AppState['permissions'], string, string, string][] = linux ? [
+      ['microphone', 'microphone', 'Microphone', 'Captures your voice.'],
+      ['accessibility', 'accessibility', 'Paste', 'Pastes with wtype or ydotool and wl-clipboard.'],
+      ['inputMonitoring', 'input', 'Keyboard access', 'Detects your shortcut from /dev/input.'],
+    ] : [
       ['microphone', 'microphone', 'Microphone', 'Captures your voice.'],
       ['accessibility', 'accessibility', 'Accessibility', 'Pastes into the focused app.'],
       ['inputMonitoring', 'input', 'Input Monitoring', 'Detects your shortcut across apps.'],
     ];
+    // Linux has no permission prompts; these steps explain the fix and check again.
+    const linuxFixes: Partial<Record<keyof AppState['permissions'], string>> = {
+      accessibility: 'Install wtype and wl-clipboard (or run ydotoold), then check again.',
+      inputMonitoring: 'Add your user to the input group, sign in again, then check again.',
+    };
     const completed = Number(next.connected) + steps.filter(([kind]) => next.permissions[kind] === 'granted').length;
     const ready = completed === 4;
     element('setup-title').textContent = ready ? 'You’re ready' : `Set up ${PRODUCT_NAME}`;
-    element('setup-description').textContent = ready ? `Hold ${hotkeyLabel(next.hotkey)} in any app to dictate.` : 'Connect your Codex account and allow access on this Mac.';
+    element('setup-description').textContent = ready ? `Hold ${hotkeyLabel(next.hotkey)} in any app to dictate.` : linux ? 'Connect your Codex account and check desktop access.' : 'Connect your Codex account and allow access on this Mac.';
     element('setup-count').textContent = checkingConnection ? 'Checking access…' : `${completed} of 4 ready`;
     element<HTMLProgressElement>('setup-progress').value = completed;
     element('setup-continue').hidden = !ready;
@@ -518,15 +530,18 @@ function runSettings(): void {
       const row = element(`${prefix}-step`);
       const button = element<HTMLButtonElement>(`${prefix}-permission`);
       const pending = pendingPermissions.has(kind);
+      row.querySelector('h3')!.textContent = label;
       row.classList.toggle('complete', granted);
       row.querySelector('.step-mark')!.textContent = granted ? '✓' : String(steps.findIndex(([item]) => item === kind) + 2);
       element(`${prefix}-state`).hidden = !granted;
       button.hidden = granted;
       button.disabled = pending;
       button.setAttribute('aria-busy', String(pending));
-      button.textContent = pending ? 'Opening…' : unavailable ? 'Check again' : permission === 'denied' ? 'Open Settings' : 'Allow';
-      button.setAttribute('aria-label', pending ? `Checking ${label}` : unavailable ? `Check ${label} again` : permission === 'denied' ? `Open Settings for ${label}` : `Allow ${PRODUCT_NAME} to use ${label}`);
-      element(`${prefix}-setup-detail`).textContent = unavailable ? `Reopen ${PRODUCT_NAME} or check again.` : permission === 'denied' ? `Enable ${PRODUCT_NAME} in Privacy & Security → ${label}.` : description;
+      const recheck = unavailable || linux;
+      button.textContent = pending ? (linux ? 'Checking…' : 'Opening…') : recheck ? 'Check again' : permission === 'denied' ? 'Open Settings' : 'Allow';
+      button.setAttribute('aria-label', pending ? `Checking ${label}` : recheck ? `Check ${label} again` : permission === 'denied' ? `Open Settings for ${label}` : `Allow ${PRODUCT_NAME} to use ${label}`);
+      element(`${prefix}-setup-detail`).textContent = unavailable ? (linux && kind === 'inputMonitoring' ? 'No keyboard found. Connect one, then check again.' : `Reopen ${PRODUCT_NAME} or check again.`)
+        : permission === 'denied' ? (linux ? linuxFixes[kind] ?? description : `Enable ${PRODUCT_NAME} in Privacy & Security → ${label}.`) : description;
       if (!nextStep && !granted) nextStep = row;
     }
     [accountStep, ...steps.map(([, prefix]) => element(`${prefix}-step`))].forEach((row) => row.classList.toggle('is-next', row === nextStep));
@@ -544,10 +559,10 @@ function runSettings(): void {
     element('status-label').textContent = next.phase === 'recording' ? 'Listening' : next.phase === 'starting' ? 'Starting' : next.phase === 'transcribing' ? 'Transcribing' : next.phase === 'error' ? 'Needs attention' : ready ? 'Ready' : 'Finish setup';
     renderSetup(next);
     hotkeySelect.value = next.hotkey;
-    element('shortcut-key').textContent = next.hotkey === 'fn' ? 'fn' : next.hotkey === 'right-option' ? 'Right ⌥' : '⌃ ⌥';
+    element('shortcut-key').textContent = hotkeyKey(next.hotkey, api.platform);
     recordButton.title = `Hold ${hotkeyLabel(next.hotkey)} anywhere, or hold this button to test`;
     loginSwitch.checked = next.launchAtLogin;
-    element('log-location').textContent = next.logDirectory.replace(/^\/Users\/[^/]+/, '~');
+    element('log-location').textContent = next.logDirectory.replace(/^\/(Users|home)\/[^/]+/, '~');
     element('open-logs').title = `${next.logDirectory}/YYYY-MM.md`;
     recordButton.disabled = !next.connected || next.permissions.microphone !== 'granted' || next.phase === 'transcribing';
     recordButton.setAttribute('aria-pressed', String(capturing));
@@ -637,7 +652,7 @@ function runSettings(): void {
       if (pendingPermissions.has(kind)) return;
       pendingPermissions.add(kind);
       if (state) renderSetup(state);
-      const request = state?.permissions[kind] === 'unavailable' ? api.refresh().then(render) : state?.permissions[kind] === 'denied' ? api.openSettings(kind) : api.requestPermission(kind).then(render);
+      const request = state?.permissions[kind] === 'unavailable' || linux ? api.refresh().then(render) : state?.permissions[kind] === 'denied' ? api.openSettings(kind) : api.requestPermission(kind).then(render);
       action(request.finally(() => {
         pendingPermissions.delete(kind);
         if (state) renderSetup(state);
@@ -668,7 +683,7 @@ if (api) {
   if (isRecorder) void runRecorder().catch((error) => console.error(errorText(error)));
   else runSettings();
 } else {
-  element('error-message').textContent = `Open ${PRODUCT_NAME} on your Mac to connect to your Codex account.`;
+  element('error-message').textContent = `Open the ${PRODUCT_NAME} app to connect to your Codex account.`;
   element('error-panel').hidden = false;
 }
 
