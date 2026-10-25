@@ -45,8 +45,6 @@ nix profile add github:qwertyu-alex/qqdict
 qqdict
 ```
 
-Use `nix run .` to test a local checkout. On older Nix versions, use `nix profile install` instead of `nix profile add`.
-
 The [Linux guide](docs/linux.md#nixos) covers keyboard access, paste tools, and declarative installation in your NixOS flake. The default Linux shortcut is **Right Ctrl**.
 
 On **macOS**:

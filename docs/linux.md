@@ -46,8 +46,6 @@ nix profile add github:qwertyu-alex/qqdict
 qqdict
 ```
 
-Use `nix profile add .` to install the local checkout. On older Nix versions, use `nix profile install` instead of `nix profile add`.
-
 For declarative installation, add the input to your existing NixOS flake:
 
 ```nix
