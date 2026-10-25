@@ -24,24 +24,55 @@ The Setup tab names whichever of these is missing. Its **Check again** button re
 
 ## NixOS
 
-Build and run this checkout:
+With flakes enabled, run directly from GitHub without cloning:
 
 ```sh
+nix run github:qwertyu-alex/qqdict
+```
+
+To build or run a local checkout instead, use its repository directory:
+
+```sh
+nix build .
 nix run .
 ```
 
-Or install it in your configuration:
+`nix build` creates a `result` link to the package. `nix run` launches the app; neither adds `qqdict` to your user's installed commands.
 
-```nix
-# flake inputs
-qqdict.url = "github:qwertyu-alex/qqdict";
+For a per-user installation:
 
-# configuration.nix
-environment.systemPackages = [ inputs.qqdict.packages.${pkgs.system}.default ];
-users.users.<you>.extraGroups = [ "input" ];
+```sh
+nix profile add github:qwertyu-alex/qqdict
+qqdict
 ```
 
-For a local flake input, use `qqdict.url = "path:/absolute/path/to/qqdict";`.
+Use `nix profile add .` to install the local checkout. On older Nix versions, use `nix profile install` instead of `nix profile add`.
+
+For declarative installation, add the input to your existing NixOS flake:
+
+```nix
+# flake.nix
+inputs.qqdict.url = "github:qwertyu-alex/qqdict";
+```
+
+If your NixOS modules do not already receive `inputs`, bind it in `outputs = inputs@{ nixpkgs, ... }: ...` and add `specialArgs = { inherit inputs; };` to your existing `nixpkgs.lib.nixosSystem` call.
+
+Then add the package and keyboard access in your NixOS configuration, replacing `your-user` with your username:
+
+```nix
+# configuration.nix
+{ inputs, pkgs, ... }:
+{
+  environment.systemPackages = [
+    inputs.qqdict.packages.${pkgs.stdenv.hostPlatform.system}.default
+  ];
+  users.users."your-user".extraGroups = [ "input" ];
+}
+```
+
+Rebuild your NixOS configuration, then launch `qqdict`. To update it later, run `nix flake update qqdict` in your configuration repository and rebuild.
+
+For a local flake input, use `inputs.qqdict.url = "path:/absolute/path/to/qqdict";` instead of the GitHub URL.
 
 The package runs nixpkgs' `electron_44` and adds `wl-clipboard` and `wtype` to its `PATH`. After joining the `input` group, log out and back in. The `input` group grants access to keyboard events across applications; qqdict needs it to detect a held modifier on Wayland.
 
@@ -51,7 +82,7 @@ For GNOME or KDE, enable ydotool instead of wtype:
 
 ```nix
 programs.ydotool.enable = true;
-users.users.<you>.extraGroups = [ "input" "ydotool" ];
+users.users."your-user".extraGroups = [ "input" "ydotool" ];
 ```
 
 **Open at login** writes `~/.config/autostart/qqdict.desktop`. It is available when qqdict was started from the installed `qqdict` launcher. Compositors that don't run XDG autostart entries need their own startup command; for niri, add `spawn-at-startup "qqdict"`.

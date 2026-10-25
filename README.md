@@ -32,13 +32,22 @@ Interface previews with example transcripts. Click any image to view it at full 
 
 ## Install
 
-On **Linux / NixOS**, build and run this checkout:
+On **Linux / NixOS**, run directly from GitHub without cloning:
 
 ```sh
-nix run .
+nix run github:qwertyu-alex/qqdict
 ```
 
-The [Linux guide](docs/linux.md) covers keyboard access, paste tools, and installation in your NixOS configuration. The default Linux shortcut is **Right Ctrl**.
+To install it for your user:
+
+```sh
+nix profile add github:qwertyu-alex/qqdict
+qqdict
+```
+
+Use `nix run .` to test a local checkout. On older Nix versions, use `nix profile install` instead of `nix profile add`.
+
+The [Linux guide](docs/linux.md#nixos) covers keyboard access, paste tools, and declarative installation in your NixOS flake. The default Linux shortcut is **Right Ctrl**.
 
 On **macOS**:
 
