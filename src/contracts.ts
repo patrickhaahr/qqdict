@@ -41,10 +41,6 @@ export interface DictationAPI {
   begin(): Promise<void>;
   end(): Promise<void>;
   copyTranscript(id: string): Promise<void>;
-  holdOverlay(held: boolean): void;
-  beginOverlayDrag(): void;
-  moveOverlayDrag(): void;
-  endOverlayDrag(): void;
   openLogs(): Promise<void>;
   showSettings(): Promise<void>;
   quit(): Promise<void>;

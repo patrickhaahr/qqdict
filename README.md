@@ -23,11 +23,6 @@ Both Mac downloads are signed with Developer ID and notarized by Apple. See [ins
   <a href="assets/screenshots/popover.png"><img src="assets/screenshots/popover.png" width="314" alt="qqdict menu bar popover showing recent example transcripts with copy buttons"></a>
 </p>
 
-<p>
-  <a href="assets/screenshots/island-recording.png"><img src="assets/screenshots/island-recording.png" width="312" alt="Floating dictation island while recording, with a waveform and timer"></a>
-  <a href="assets/screenshots/island-saved.png"><img src="assets/screenshots/island-saved.png" width="312" alt="Floating dictation island after a transcript is saved, with its quick-copy button"></a>
-</p>
-
 Interface previews with example transcripts. Click any image to view it at full resolution.
 
 ## Install
@@ -71,7 +66,7 @@ Production builds with the automatic updater check for new stable releases and d
 - **Paste where you write:** qqdict inserts into the originally focused field. If focus changes or the field is protected, your transcript stays available to copy.
 - **Automatic spacing:** dictated text gets a trailing space. In editors that expose cursor context, qqdict reuses existing spaces and attaches punctuation to the preceding word.
 - **Recent transcripts:** click the menu bar icon to recover and copy your last 10 dictations.
-- **Floating island:** shows recording and transcription status, with one-click copy of the latest transcript. Drag it to any corner or the center of any screen edge; it remembers the position.
+- **Speech indicator:** a compact waveform at the bottom center of the screen. It lets clicks through and disappears one second after you release the shortcut, while transcription finishes in the background. Copy transcripts from Recent or History.
 - **Markdown journal:** every completed transcript is appended with a timestamp to `~/Dictation/YYYY-MM.md`.
 - **Your preferences:** choose a microphone and optionally open qqdict at login.
 

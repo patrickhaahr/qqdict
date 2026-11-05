@@ -1,10 +1,16 @@
 import { execFile } from 'node:child_process';
 import { access, constants } from 'node:fs/promises';
 import path from 'node:path';
+import { setTimeout as delay } from 'node:timers/promises';
 
 export type DesktopWindow = { id: string; pid?: number; appId?: string };
 
-export type WindowManager = { name: string; focused(): Promise<DesktopWindow | null>; focus(id: string): Promise<void> };
+export type WindowManager = {
+  name: string;
+  focused(): Promise<DesktopWindow | null>;
+  focus(id: string): Promise<void>;
+  positionOverlay?(window: { pid: number; title: string; x: number; y: number }): Promise<void>;
+};
 
 export type PasteTool = { name: 'wtype' | 'ydotool'; paste(terminal: boolean): Promise<void> };
 
@@ -80,6 +86,38 @@ export function detectWindowManager(env: NodeJS.ProcessEnv = process.env): Windo
     name: 'niri',
     focused: async () => parseNiriWindow(await json('niri', ['msg', '--json', 'focused-window'])),
     focus: async (id) => { await run('niri', ['msg', 'action', 'focus-window', '--id', id]); },
+    async positionOverlay({ pid, title, x, y }) {
+      // Electron cannot set Wayland window coordinates. Wait briefly for the
+      // compositor to map our own status window, then move it without focus.
+      for (let attempt = 0; attempt < 5; attempt++) {
+        const windows = await json('niri', ['msg', '--json', 'windows']);
+        const window: unknown = Array.isArray(windows) ? windows.find((value: unknown) =>
+          value !== null && typeof value === 'object' && 'pid' in value && value.pid === pid
+          && 'title' in value && value.title === title) : undefined;
+        const parsed = parseNiriWindow(window);
+        if (parsed && window && typeof window === 'object') {
+          const id = parsed.id;
+          if (!('is_floating' in window) || !window.is_floating) {
+            await run('niri', ['msg', 'action', 'move-window-to-floating', '--id', id]);
+          } else if ('layout' in window && window.layout && typeof window.layout === 'object'
+            && 'tile_pos_in_workspace_view' in window.layout) {
+            const position = window.layout.tile_pos_in_workspace_view;
+            if (Array.isArray(position) && typeof position[0] === 'number' && typeof position[1] === 'number') {
+              // Relative movement cancels the compositor's work-area origin,
+              // which may include panels that Electron cannot see on Wayland.
+              const dx = Math.round(x - position[0]), dy = Math.round(y - position[1]);
+              if (dx !== 0 || dy !== 0) {
+                await run('niri', ['msg', 'action', 'move-floating-window', '--id', id,
+                  `--x=${dx >= 0 ? '+' : ''}${dx}`, `--y=${dy >= 0 ? '+' : ''}${dy}`]);
+              }
+              return;
+            }
+          }
+        }
+        await delay(50);
+      }
+      throw new Error('The dictation indicator was not mapped by niri.');
+    },
   };
 
   if (env.HYPRLAND_INSTANCE_SIGNATURE) return {

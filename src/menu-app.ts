@@ -7,7 +7,8 @@ import { DictationTransport, safeMessage, type DictationEvent } from './transpor
 import { NativeBridge, type FocusTarget } from './native';
 import { DictationStore } from './store';
 import { pasteTranscript } from './paste';
-import { nearestIslandAnchor, positionForAnchor } from './island-position';
+import { positionForAnchor } from './island-position';
+import { detectWindowManager } from './linux-desktop';
 import { migrateLegacyHistory } from './storage';
 import { BUILD_IDENTITY, PRODUCT_NAME, PRODUCT_VERSION, PRODUCT_REPOSITORY } from './product';
 import { AppUpdater, updateAvailability } from './updates';
@@ -37,9 +38,7 @@ let pendingSettings = 0;
 let recorderReady = false;
 let nextTakeId = 1;
 let fadeTimer: ReturnType<typeof setTimeout> | null = null;
-let overlayHovered = false;
-type OverlayDrag = { cursor: Electron.Point; bounds: Electron.Rectangle; moved: boolean };
-let overlayDrag: OverlayDrag | null = null;
+const windowManager = linux ? detectWindowManager() : null;
 const harness = new CodexHarness();
 type Take = { id: number; manual: boolean; target: FocusTarget; focusReady: Promise<void>; stopRequested: boolean; commandStarted: boolean; startedAt: number; finishing?: Promise<void>; partial: string; abort: AbortController };
 let take: Take | null = null;
@@ -58,7 +57,6 @@ function send(event: AppEvent): void { for (const window of surfaces()) window.w
 function snapshot(): AppState { return { ...state, permissions: { ...state.permissions }, history: store?.history ?? [] }; }
 function publish(): void {
   if (quitting) return;
-  // The nonactivating panel accepts dragging in every phase without taking typing focus.
   send({ type: 'state', state: snapshot() }); updateTray();
   updates?.activityChanged();
 }
@@ -111,73 +109,29 @@ function showOverlay(): void {
   if (!overlay) return;
   if (fadeTimer) clearTimeout(fadeTimer);
   fadeTimer = null;
-  if (!overlay.isVisible()) overlayHovered = false;
-  if (!overlayDrag) positionOverlay();
+  positionOverlay();
   overlay.showInactive();
-  const point = screen.getCursorScreenPoint(), bounds = overlay.getBounds();
-  overlayHovered = point.x >= bounds.x + 16 && point.x <= bounds.x + bounds.width - 16
-    && point.y >= bounds.y + 16 && point.y <= bounds.y + bounds.height - 16;
-  updateOverlayMouseInput();
-}
-
-function updateOverlayMouseInput(): void {
-  // Mouse motion reaches Chromium for hover detection, while the transparent
-  // shadow margins let clicks through to the writing app.
-  overlay?.setIgnoreMouseEvents(!overlayHovered && !overlayDrag, { forward: true });
 }
 
 function positionOverlay(): void {
   if (!overlay || overlay.isDestroyed()) return;
-  const placement = store.islandPlacement;
-  const display = screen.getAllDisplays().find(item => item.id === placement.displayId)
-    ?? screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
-  const point = positionForAnchor(display.workArea, overlay.getBounds(), placement.anchor);
+  const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
+  const point = positionForAnchor(display.workArea, overlay.getBounds(), 'bottom-center');
   overlay.setPosition(point.x, point.y);
-}
-
-function startOverlayDrag(): void {
-  if (!overlay?.isVisible() || overlayDrag) return;
-  overlayDrag = { cursor: screen.getCursorScreenPoint(), bounds: overlay.getBounds(), moved: false };
-  updateOverlayMouseInput();
-  if (fadeTimer) clearTimeout(fadeTimer);
-  fadeTimer = null;
-}
-
-function moveOverlayDrag(): void {
-  if (!overlayDrag || !overlay || overlay.isDestroyed()) return;
-  const cursor = screen.getCursorScreenPoint();
-  const dx = cursor.x - overlayDrag.cursor.x, dy = cursor.y - overlayDrag.cursor.y;
-  if (!overlayDrag.moved && Math.hypot(dx, dy) < 4) return;
-  overlayDrag.moved = true;
-  overlay.setPosition(Math.round(overlayDrag.bounds.x + dx), Math.round(overlayDrag.bounds.y + dy));
-}
-
-function endOverlayDrag(): void {
-  if (!overlayDrag) return;
-  moveOverlayDrag();
-  const moved = overlayDrag.moved;
-  overlayDrag = null;
-  updateOverlayMouseInput();
-  if (moved && overlay && !overlay.isDestroyed()) {
-    const bounds = overlay.getBounds();
-    const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
-    const anchor = nearestIslandAnchor(display.workArea, bounds, bounds);
-    const point = positionForAnchor(display.workArea, bounds, anchor);
-    overlay.setPosition(point.x, point.y);
-    // Placement uses its own store action, so dragging never changes the global shortcut.
-    void store.updateIslandPlacement({ anchor, displayId: display.id }).catch(() => {
-      console.error('Could not save the island position.');
-    });
+  if (overlay.isVisible() && windowManager?.positionOverlay) {
+    void windowManager.positionOverlay({
+      pid: process.pid, title: `${PRODUCT_NAME} status`,
+      x: point.x - display.bounds.x, y: point.y - display.bounds.y,
+    }).catch(() => { console.error('Could not position the dictation indicator.'); });
   }
-  if (!take && overlay?.isVisible()) dismissOverlay(1500);
-  updates?.activityChanged();
 }
 
-function dismissOverlay(delay = 4000): void {
-  if (fadeTimer) clearTimeout(fadeTimer);
-  fadeTimer = null;
-  if (overlayHovered || overlayDrag) return;
-  fadeTimer = setTimeout(() => { if (!take && !overlayHovered && !overlayDrag) overlay?.hide(); fadeTimer = null; }, delay);
+function dismissOverlay(): void {
+  if (fadeTimer) return;
+  fadeTimer = setTimeout(() => {
+    if (state.phase !== 'starting' && state.phase !== 'recording') overlay?.hide();
+    fadeTimer = null;
+  }, 1000);
 }
 
 function showSetup(): void {
@@ -241,14 +195,14 @@ async function begin(manual: boolean): Promise<void> {
 
   // Capture can start immediately. On Wayland, delay the island until the
   // original window is captured so a compositor cannot focus it too early.
-  if (linux && !manual) void current.focusReady.then(() => { if (take === current) showOverlay(); });
+  if (linux && !manual) void current.focusReady.then(() => { if (take === current && !current.stopRequested) showOverlay(); });
   else showOverlay();
 }
 
 function end(): void {
   if (!take || take.finishing || take.stopRequested) return;
   take.stopRequested = true;
-  state.phase = 'transcribing'; state.detail = 'Transcribing…'; state.level = 0; publish();
+  state.phase = 'transcribing'; state.detail = 'Transcribing…'; state.level = 0; publish(); dismissOverlay();
   if (take.commandStarted) recorder?.webContents.send('dictation:event', { type: 'command', command: 'stop', takeId: take.id } satisfies AppEvent);
 }
 
@@ -261,7 +215,7 @@ function cancel(): void {
     if (current.target.focusId) void bridge.request('discardFocus', { focusId: current.target.focusId }).catch(() => {});
   }
   transport.cancel();
-  state.phase = 'idle'; state.detail = 'Cancelled'; state.level = 0; publish(); dismissOverlay(500);
+  state.phase = 'idle'; state.detail = 'Cancelled'; state.level = 0; publish(); dismissOverlay();
 }
 
 function fail(message: string): void {
@@ -272,7 +226,7 @@ function fail(message: string): void {
   recorder?.webContents.send('dictation:event', { type: 'command', command: 'cancel', takeId: current.id } satisfies AppEvent);
   transport.cancel();
   if (current.target.focusId) void bridge.request('discardFocus', { focusId: current.target.focusId }).catch(() => {});
-  state.phase = 'error'; state.detail = safeMessage(message); state.level = 0; publish(); showOverlay(); dismissOverlay(6000);
+  state.phase = 'error'; state.detail = safeMessage(message); state.level = 0; publish(); dismissOverlay();
 }
 
 function finalize(text: string, current: Take): Promise<void> {
@@ -280,9 +234,10 @@ function finalize(text: string, current: Take): Promise<void> {
   current.finishing = (async () => {
     if (take !== current) return;
     state.phase = 'transcribing'; state.detail = 'Saving transcript…'; state.level = 0; publish();
+    if (!current.stopRequested) { current.stopRequested = true; dismissOverlay(); }
     if (!text.trim()) {
       if (current.target.focusId) void bridge.request('discardFocus', { focusId: current.target.focusId }).catch(() => {});
-      state.detail = 'No speech detected.'; take = null; state.phase = 'idle'; publish(); dismissOverlay(); return;
+      state.detail = 'No speech detected.'; take = null; state.phase = 'idle'; publish(); return;
     }
     let entry: TranscriptEntry | undefined;
     let historyWriteFailed = false;
@@ -315,7 +270,7 @@ function finalize(text: string, current: Take): Promise<void> {
     if (historyWriteFailed) state.detail += ' Recent-history storage needs attention.';
     if (current.target.focusId) void bridge.request('discardFocus', { focusId: current.target.focusId }).catch(() => {});
     if (take !== current) return;
-    take = null; state.phase = entry.logError ? 'error' : 'idle'; publish(); dismissOverlay(6000);
+    take = null; state.phase = entry.logError ? 'error' : 'idle'; publish();
   })().catch((error) => { if (take === current) fail(safeMessage(error)); }).finally(() => {
     pendingFinalizations.delete(current.finishing!);
     updates?.activityChanged();
@@ -383,7 +338,7 @@ function updateMenuItem(): Electron.MenuItemConstructorOptions {
 }
 
 function updateBusy(): boolean {
-  return !!take || pendingFinalizations.size > 0 || pendingSettings > 0 || !!overlayDrag || screenLocked || suspended;
+  return !!take || pendingFinalizations.size > 0 || pendingSettings > 0 || screenLocked || suspended;
 }
 
 async function initializeUpdates(): Promise<void> {
@@ -446,10 +401,12 @@ async function initialize(): Promise<void> {
     ...(linux ? { autoHideMenuBar: true } : { titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 16, y: 18 } }) });
   recorder = createSurface({ width: 1, height: 1, show: false, focusable: false, skipTaskbar: true, webPreferences: { backgroundThrottling: false, autoplayPolicy: 'no-user-gesture-required' } });
   popover = createSurface({ width: 392, height: Math.min(550, area.height - 40), show: false, frame: false, transparent: true, hasShadow: false, resizable: false, skipTaskbar: true, title: `${PRODUCT_NAME} · Recent`, backgroundColor: '#00000000' });
-  overlay = createSurface({ width: 312, height: 76, show: false, title: `${PRODUCT_NAME} status`, type: 'panel', frame: false, transparent: true, focusable: false, acceptFirstMouse: true, resizable: false, hasShadow: false, alwaysOnTop: true, skipTaskbar: true });
+  overlay = createSurface({ width: 76, height: 44, show: false, title: `${PRODUCT_NAME} status`, type: 'panel', frame: false, transparent: true, focusable: false, acceptFirstMouse: true, resizable: false, hasShadow: false, alwaysOnTop: true, skipTaskbar: true });
+  overlay.on('page-title-updated', event => event.preventDefault());
   overlay.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true }); overlay.setAlwaysOnTop(true, 'floating');
-  updateOverlayMouseInput();
-  const adjustOverlay = () => { overlayDrag = null; positionOverlay(); updateOverlayMouseInput(); if (!take && overlay?.isVisible()) dismissOverlay(); };
+  overlay.setIgnoreMouseEvents(true);
+  overlay.on('show', positionOverlay);
+  const adjustOverlay = () => { positionOverlay(); };
   screen.on('display-added', adjustOverlay);
   screen.on('display-removed', adjustOverlay);
   screen.on('display-metrics-changed', adjustOverlay);
@@ -560,20 +517,9 @@ function bindIPC(): void {
     const entry = store.history.find((entry) => entry.id === id);
     if (!entry) throw new Error('This transcript is no longer available.');
     clipboard.writeText(entry.text);
-    if (event.sender === overlay?.webContents) dismissOverlay(2000);
   });
   handle('logs', async () => { await mkdir(state.logDirectory, { recursive: true }); await shell.openPath(state.logDirectory); });
   handle('show-settings', showSetup); handle('quit', () => app.quit());
-  ipcMain.on('dictation:overlay-hover', (event, held: unknown) => {
-    if (event.sender !== overlay?.webContents || typeof held !== 'boolean') return;
-    overlayHovered = held;
-    updateOverlayMouseInput();
-    if (held) { if (fadeTimer) clearTimeout(fadeTimer); fadeTimer = null; }
-    else if (!take && overlay?.isVisible()) dismissOverlay(1500);
-  });
-  ipcMain.on('dictation:overlay-drag-start', event => { if (event.sender === overlay?.webContents) startOverlayDrag(); });
-  ipcMain.on('dictation:overlay-drag-move', event => { if (event.sender === overlay?.webContents) moveOverlayDrag(); });
-  ipcMain.on('dictation:overlay-drag-end', event => { if (event.sender === overlay?.webContents) endOverlayDrag(); });
   ipcMain.on('dictation:capturing', (event, id: number, microphoneName: unknown) => {
     if (event.sender !== recorder?.webContents || take?.id !== id || take.stopRequested || take.finishing) return;
     state.microphoneName = typeof microphoneName === 'string' ? microphoneName.trim().slice(0, 120) : '';

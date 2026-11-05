@@ -87,7 +87,7 @@ users.users."your-user".extraGroups = [ "input" "ydotool" ];
 
 ## Window rules
 
-The floating status island is titled `qqdict status`. The recent-transcripts popover is titled `qqdict · Recent`. Tiling compositors should float both and keep focus where you are typing. For niri:
+The speech indicator is titled `qqdict status`. The recent-transcripts popover is titled `qqdict · Recent`. Tiling compositors should float both and keep focus where you are typing. On niri, the `default-floating-position` rule below is needed to open the indicator directly at the bottom center. Without it, niri opens the window in the middle and animates qqdict's fallback IPC move downward:
 
 ```kdl
 window-rule {
@@ -97,6 +97,7 @@ window-rule {
 window-rule {
     match app-id="^qqdict$" title="^qqdict status$"
     open-focused false
+    default-floating-position x=0 y=12 relative-to="bottom"
 }
 ```
 
@@ -138,6 +139,6 @@ When `pnpm-lock.yaml` changes, update the `hash` in `nix/package.nix`. Set it to
 - **One clipboard format is restored.** `wl-copy` offers a single format, so qqdict saves the richest one (an image, otherwise text) and restores that. Rich-text formats from the same copy are lost.
 - **No field or password detection.** Wayland doesn't expose the focused text field, so qqdict checks the window instead. Dictating with no text field focused pastes into whatever the window does with Ctrl+V. It cannot identify protected fields on Linux.
 - **Clipboard ownership is inferred from text.** If you copy exactly the staged transcript during automatic paste, qqdict cannot distinguish that copy from its own clipboard and may restore the previous content.
-- **Window placement is compositor-controlled.** Wayland may ignore the island's saved screen position and dragging; use compositor rules where needed.
+- **Window placement is compositor-controlled.** qqdict positions its indicator through niri IPC. Other Wayland compositors may ignore Electron's bottom-center coordinates; use compositor rules where needed.
 - Terminals are detected by app id and receive Ctrl+Shift+V.
 - Without niri, Hyprland or sway IPC, qqdict pastes without checking that focus is unchanged.

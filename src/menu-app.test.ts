@@ -10,6 +10,7 @@ import type { AppEvent } from './contracts';
 import type { FocusTarget } from './native';
 import { AppUpdater } from './updates';
 import * as hotkeys from './hotkeys';
+import * as islandPosition from './island-position';
 
 const menuCode = readFile('src/menu-app.ts', 'utf8').then((source) => transform(source, { loader: 'ts', format: 'cjs' }));
 const nodeRequire = createRequire(`${process.cwd()}/package.json`);
@@ -27,16 +28,30 @@ async function menuFixture(options: { pasteCleanup?: Promise<void>; settingsClea
     quitAndInstall() { this.installs++; nativeUpdates.emit('before-quit-for-update'); },
   });
   const contents = { send: (_channel: string, event: AppEvent) => events.push(event) };
+  let overlayVisible = false;
+  let overlayPosition = { x: 0, y: 0 };
+  const overlay = {
+    webContents: contents, isDestroyed: () => false, isVisible: () => overlayVisible,
+    showInactive: () => { overlayVisible = true; }, hide: () => { overlayVisible = false; },
+    getBounds: () => ({ ...overlayPosition, width: 76, height: 44 }),
+    setPosition: (x: number, y: number) => { overlayPosition = { x, y }; },
+    setIgnoreMouseEvents() {},
+  };
   const dependencies: Record<string, unknown> = {
     electron: {
       app: { setName() {}, setDesktopName() {}, setPath() {}, getPath: () => '/tmp/qqdict-test', requestSingleInstanceLock: () => false, quit() {}, on() {} },
       autoUpdater: nativeUpdates,
+      screen: {
+        getCursorScreenPoint: () => ({ x: 700, y: 400 }),
+        getDisplayNearestPoint: () => ({ workArea: { x: 0, y: 30, width: 1920, height: 1050 } }),
+      },
       ipcMain: { handle: (name: string, callback: (...args: any[]) => void) => listeners.set(name, callback),
         on: (name: string, callback: (...args: any[]) => void) => listeners.set(name, callback) },
     },
     './harness': { CodexHarness: class {} },
     './transport': { DictationTransport: class { cancel() {} }, safeMessage: String },
-    './native': {}, './store': {}, './island-position': {}, './storage': {},
+    './native': {}, './store': {}, './island-position': islandPosition, './storage': {},
+    './linux-desktop': { detectWindowManager: () => null },
     './updates': {},
     './hotkeys': hotkeys, './autostart': {},
     './product': { PRODUCT_NAME: 'qqdict-test', BUILD_IDENTITY: { journalDirectory: 'Dictation Test' } },
@@ -47,13 +62,14 @@ async function menuFixture(options: { pasteCleanup?: Promise<void>; settingsClea
     module: { exports: {} }, exports: {}, AbortController, Buffer, setTimeout, clearTimeout,
     process: { platform: options.platform ?? 'darwin' },
     fixture: {
-      contents,
+      contents, overlay,
       bridge: {
         captureFocus: () => focus,
         setHotkey: () => options.settingsCleanup ?? Promise.resolve(),
         request: async (command: string, fields: { focusId: string }) => { if (command === 'discardFocus') discarded.push(fields.focusId); },
       },
       store: {
+        islandPlacement: { anchor: 'top-right', displayId: 42 },
         settings: { hotkey: 'fn', microphoneId: '', launchAtLogin: false },
         history: [] as { id: string; text: string }[],
         async updateSettings(settings: object) { Object.assign(this.settings, settings); },
@@ -76,6 +92,9 @@ async function menuFixture(options: { pasteCleanup?: Promise<void>; settingsClea
   let updater: AppUpdater | undefined;
   return {
     events, discarded, pasted, resolveFocus,
+    attachOverlay: () => vm.runInContext('overlay = fixture.overlay', context),
+    get overlayVisible() { return overlayVisible; },
+    get overlayPosition() { return overlayPosition; },
     begin: () => vm.runInContext('begin(false)', context) as Promise<void>,
     end: () => vm.runInContext('end()', context),
     cancel: () => vm.runInContext('cancel()', context),
@@ -101,6 +120,42 @@ async function menuFixture(options: { pasteCleanup?: Promise<void>; settingsClea
     cleanup: () => { updater?.dispose(); vm.runInContext('if (fadeTimer) clearTimeout(fadeTimer)', context); },
   };
 }
+
+test('speech indicator is bottom-centered and hides one second after release while transcription continues', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const fixture = await menuFixture();
+  t.after(fixture.cleanup);
+  fixture.attachOverlay();
+  await fixture.begin();
+  assert.equal(fixture.overlayVisible, true);
+  assert.deepEqual(fixture.overlayPosition, { x: 922, y: 1024 }, 'ignores the old draggable placement');
+  fixture.end();
+  t.mock.timers.tick(999);
+  assert.equal(fixture.overlayVisible, true);
+  t.mock.timers.tick(1);
+  assert.equal(fixture.phase, 'transcribing');
+  assert.equal(fixture.overlayVisible, false);
+  fixture.resolveFocus({ focusId: 'original-field', targetPid: 123 });
+  await fixture.finalize();
+  assert.equal(fixture.overlayVisible, false, 'saving does not bring the indicator back');
+
+  await fixture.begin();
+  fixture.end();
+  t.mock.timers.tick(500);
+  await fixture.finalize();
+  t.mock.timers.tick(499);
+  assert.equal(fixture.overlayVisible, true);
+  t.mock.timers.tick(1);
+  assert.equal(fixture.overlayVisible, false, 'a fast save does not restart the release timer');
+
+  await fixture.begin();
+  fixture.end();
+  t.mock.timers.tick(500);
+  fixture.cancel();
+  await fixture.begin();
+  t.mock.timers.tick(1000);
+  assert.equal(fixture.overlayVisible, true, 'a new recording cancels the previous dismissal');
+});
 
 for (const platform of ['darwin', 'linux'] as const) {
   test(`starts and stops capture while the original focus check is still pending (${platform})`, { timeout: 5000 }, async (t) => {
