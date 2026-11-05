@@ -116,7 +116,7 @@ hl.window_rule({
 
 If the island takes focus anyway, qqdict hands focus back to the original window before pasting.
 
-The tray icon needs a StatusNotifierItem host, for example waybar's `tray` module. Left-click opens recent transcripts. Right-click shows a menu with Settings and Quit.
+qqdict starts quietly in the tray without opening a window. The tray icon needs a StatusNotifierItem host, for example waybar's `tray` module. Left-click opens recent transcripts. Right-click shows a menu with Settings and Quit; choose Settings to complete setup or change preferences.
 
 ## Development
 

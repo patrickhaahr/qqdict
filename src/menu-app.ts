@@ -13,7 +13,7 @@ import { migrateLegacyHistory } from './storage';
 import { BUILD_IDENTITY, PRODUCT_NAME, PRODUCT_VERSION, PRODUCT_REPOSITORY } from './product';
 import { AppUpdater, updateAvailability } from './updates';
 import { defaultHotkey, hotkeyName } from './hotkeys';
-import { AUTOSTART_FLAG, readAutostart, writeAutostart } from './autostart';
+import { readAutostart, writeAutostart } from './autostart';
 import type { AppEvent, AppState, Settings, TranscriptEntry } from './contracts';
 
 const linux = process.platform === 'linux';
@@ -291,7 +291,7 @@ function handleTransport(event: DictationEvent): void {
   else if (event.type === 'error') fail(event.text ?? 'Dictation failed.');
 }
 
-type LoginItem = { managed: boolean; openedAtLogin: boolean; read(): Promise<boolean>; write(openAtLogin: boolean): Promise<void> };
+type LoginItem = { managed: boolean; read(): Promise<boolean>; write(openAtLogin: boolean): Promise<void> };
 
 function loginItem(): LoginItem {
   if (linux) {
@@ -299,13 +299,13 @@ function loginItem(): LoginItem {
     const launcher = process.env.QQDICT_EXEC;
 
     return {
-      managed: !!launcher, openedAtLogin: process.argv.includes(AUTOSTART_FLAG),
+      managed: !!launcher,
       read: () => readAutostart(), write: (openAtLogin) => writeAutostart(openAtLogin ? launcher : undefined),
     };
   }
 
   return {
-    managed: app.isPackaged, openedAtLogin: app.getLoginItemSettings().wasOpenedAtLogin,
+    managed: app.isPackaged,
     read: async () => app.getLoginItemSettings().openAtLogin,
     write: async (openAtLogin) => app.setLoginItemSettings({ openAtLogin }),
   };
@@ -457,7 +457,6 @@ async function initialize(): Promise<void> {
   ]));
   updates!.start();
 
-  if (!login.openedAtLogin || Object.values(state.permissions).some((permission) => permission !== 'granted') || !state.connected) showSetup();
   setInterval(() => { if (take && !take.stopRequested) { state.elapsedSeconds = Math.min(300, Math.floor((Date.now() - take.startedAt) / 1000)); if (state.elapsedSeconds >= 300) end(); publish(); } }, 250).unref();
   powerMonitor.on('suspend', () => { suspended = true; cancel(); });
   powerMonitor.on('lock-screen', () => { screenLocked = true; cancel(); });

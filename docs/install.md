@@ -21,7 +21,7 @@ Open the DMG, drag **qqdict** to **Applications**, then eject the disk image. Op
 
 The current version 0.5.6 downloads are **signed with Developer ID and notarized by Apple**.
 
-Open **qqdict** from Applications. If macOS asks whether to open an app downloaded from the internet, choose **Open**, then complete Setup. You will grant microphone and privacy permissions during Setup.
+Open **qqdict** from Applications. If macOS asks whether to open an app downloaded from the internet, choose **Open**. qqdict starts quietly in the menu bar. Right-click its icon and choose **Settings…** to complete Setup and grant microphone and privacy permissions.
 
 If macOS reports a damaged app or malware, download the current release again from this repository and check the release’s checksum; do not bypass that message. See [Apple’s explanation of macOS app security](https://support.apple.com/102445).
 

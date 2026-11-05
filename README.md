@@ -49,7 +49,7 @@ On **macOS**:
 3. Open qqdict from **Applications** and complete the **Setup** tab: Codex sign-in, Microphone, Accessibility, and Input Monitoring.
 4. Click a text field, hold **fn / Globe**, speak, and release to paste.
 
-macOS may ask you to confirm opening an app downloaded from the internet on first launch. qqdict lives in the menu bar; its window can be closed while dictation stays available.
+macOS may ask you to confirm opening an app downloaded from the internet on first launch. qqdict starts quietly in the menu bar or tray. Click its icon for recent transcripts, or open **Settings…** from its menu to finish setup or change preferences.
 
 Production builds with the automatic updater check for new stable releases and download them in the background. Choose **Restart now** when ready, or **Later** to update at the next app launch. Right-click the menu bar icon for **Check for updates…**. Downloads of **0.5.5** and earlier predate this feature and need one manual upgrade to **0.5.6**, the first release containing it. See [automatic updates and first-release setup](docs/automatic-updates.md).
 

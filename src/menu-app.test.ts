@@ -15,6 +15,108 @@ import * as islandPosition from './island-position';
 const menuCode = readFile('src/menu-app.ts', 'utf8').then((source) => transform(source, { loader: 'ts', format: 'cjs' }));
 const nodeRequire = createRequire(`${process.cwd()}/package.json`);
 
+async function startupFixture({ platform, ready }: { platform: 'darwin' | 'linux'; ready: boolean }) {
+  const windows: TestWindow[] = [];
+  const trays: TestTray[] = [];
+  class TestWindow extends EventEmitter {
+    private visible: boolean;
+    readonly title: string;
+    readonly webContents = Object.assign(new EventEmitter(), { send() {}, setWindowOpenHandler() {} });
+    constructor(options: { show?: boolean; title?: string }) {
+      super();
+      this.visible = options.show ?? true;
+      this.title = options.title ?? '';
+      windows.push(this);
+    }
+    isDestroyed() { return false; }
+    isVisible() { return this.visible; }
+    show() { this.visible = true; }
+    hide() { this.visible = false; }
+    focus() {}
+    getBounds() { return { x: 0, y: 0, width: 392, height: 550 }; }
+    setPosition() {}
+    setVisibleOnAllWorkspaces() {}
+    setAlwaysOnTop() {}
+    setIgnoreMouseEvents() {}
+    async loadFile() {}
+  }
+  class TestTray extends EventEmitter {
+    menu: { label?: string; click?: () => void }[] = [];
+    constructor() { super(); trays.push(this); }
+    isDestroyed() { return false; }
+    setImage() {}
+    setToolTip() {}
+    setTitle() {}
+    setContextMenu(menu: TestTray['menu']) { this.menu = menu; }
+    getBounds() { return { x: 100, y: 0, width: 22, height: 22 }; }
+  }
+  const area = { x: 0, y: 30, width: 1920, height: 1050 };
+  const dependencies: Record<string, unknown> = {
+    electron: {
+      app: {
+        setName() {}, setDesktopName() {}, setPath() {}, getPath: () => '/tmp/qqdict-startup-test',
+        requestSingleInstanceLock: () => false, quit() {}, on() {},
+        getLoginItemSettings: () => ({ wasOpenedAtLogin: false }),
+        getVersion: () => '0.5.6', setAboutPanelOptions() {},
+      },
+      BrowserWindow: TestWindow, Tray: TestTray, autoUpdater: new EventEmitter(),
+      nativeImage: { createFromBitmap: () => ({ setTemplateImage() {} }) },
+      ipcMain: { on() {}, handle() {} }, powerMonitor: new EventEmitter(),
+      Menu: { buildFromTemplate: (items: unknown) => items, setApplicationMenu() {}, getApplicationMenu: () => null },
+      screen: { on() {}, getPrimaryDisplay: () => ({ workArea: area }), getDisplayMatching: () => ({ workArea: area }), getCursorScreenPoint: () => ({ x: 100, y: 0 }) },
+      session: { defaultSession: { setPermissionRequestHandler() {}, setPermissionCheckHandler() {} } },
+      systemPreferences: { getMediaAccessStatus: () => ready ? 'granted' : 'denied' },
+    },
+    './harness': { CodexHarness: class {} },
+    './transport': { DictationTransport: class { async status() { return { connected: ready, label: 'Test connection' }; } }, safeMessage: String },
+    './native': { NativeBridge: class extends EventEmitter {
+      start() {}
+      async setHotkey() {}
+      async request() { return { inputMonitoring: ready, accessibility: ready, eventTapActive: ready }; }
+    } },
+    './store': { DictationStore: class {
+      readonly settings = { hotkey: hotkeys.defaultHotkey(platform), microphoneId: '', launchAtLogin: false };
+      readonly history = [];
+      async load() {}
+    } },
+    './updates': { AppUpdater, updateAvailability: () => ({ reason: 'Test build' }) },
+    './hotkeys': hotkeys, './autostart': {}, './island-position': islandPosition,
+    './linux-desktop': { detectWindowManager: () => null }, './storage': {}, './paste': {},
+    './product': { PRODUCT_NAME: 'qqdict-test', BUILD_IDENTITY: { channel: 'nightly', journalDirectory: 'Dictation Test', iconSource: 'app-icon.png' } },
+  };
+  const context = vm.createContext({
+    require: (id: string) => id.startsWith('node:') ? nodeRequire(id) : dependencies[id],
+    module: { exports: {} }, exports: {}, __dirname: '/tmp/qqdict-startup-test',
+    process: { platform, env: {}, argv: [], execPath: '/node', arch: 'x64' },
+    Buffer, setTimeout, clearTimeout, setInterval: () => ({ unref() {} }), console,
+  });
+  vm.runInContext((await menuCode).code, context);
+  await vm.runInContext('initialize()', context);
+  return { windows, trays };
+}
+
+for (const platform of ['darwin', 'linux'] as const) {
+  for (const ready of [true, false]) {
+    test(`starts quietly and opens the UI from the tray (${platform}, setup ${ready ? 'ready' : 'incomplete'})`, async () => {
+      const { windows, trays } = await startupFixture({ platform, ready });
+      assert.equal(windows.some(window => window.isVisible()), false, 'startup must not show any app window');
+      assert.equal(trays.length, 1, 'the tray remains available');
+      const settings = windows.find(window => window.title === 'qqdict-test');
+      const recent = windows.find(window => window.title === 'qqdict-test · Recent');
+      const [tray] = trays;
+      assert.ok(settings && recent && tray);
+      tray.emit('click');
+      assert.equal(recent.isVisible(), true, 'clicking the tray opens Recent');
+      if (platform === 'linux') {
+        const settingsItem = tray.menu.find(item => item.label === 'Settings…');
+        assert.ok(settingsItem?.click);
+        settingsItem.click();
+        assert.equal(settings.isVisible(), true, 'Settings remains available in the tray menu');
+      }
+    });
+  }
+}
+
 async function menuFixture(options: { pasteCleanup?: Promise<void>; settingsCleanup?: Promise<void>; platform?: 'darwin' | 'linux' } = {}) {
   let resolveFocus!: (target: FocusTarget) => void;
   const focus = new Promise<FocusTarget>((resolve) => { resolveFocus = resolve; });
